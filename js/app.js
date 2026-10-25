@@ -3,7 +3,7 @@ import {
   PROFILES,
   derive,
   buildPanel,
-  buildStand,
+  buildRack,
   buildCoupon,
   buildInk,
   seatPanel,
@@ -66,31 +66,31 @@ const SHELL = { panel: 0.68, stand: 0.4 };
 function buildDisplayObjects() {
   const panel = buildPanel(state);
   if (state.showInk) panel.add(buildInk(state));
-  const stand = buildStand(state);
+  const rack = buildRack(state);
   const d = derive(state);
-  return { panel, stand, d };
+  return { panel, rack, d };
 }
 
 function renderScene() {
-  const { panel, stand, d } = buildDisplayObjects();
+  const { panel, rack, d } = buildDisplayObjects();
   viewer.clear();
 
   if (state.layout === 'assembled') {
     seatPanel(panel, state);
-    viewer.add(stand);
+    viewer.add(rack);
     viewer.add(panel);
     return;
   }
 
   // "As printed": easel standing on the bed, panel lying flat beside it.
-  const standW = d.hasStand ? d.standWidth : 0;
+  const standW = d.hasRack ? d.rackWidth : 0;
   const gap = 14;
-  const totalW = standW + (d.hasStand ? gap : 0) + d.width;
+  const totalW = standW + (d.hasRack ? gap : 0) + d.width;
   let x = -totalW / 2;
 
-  if (d.hasStand) {
-    stand.position.x = x + standW / 2;
-    viewer.add(stand);
+  if (d.hasRack) {
+    rack.position.x = x + standW / 2;
+    viewer.add(rack);
     x += standW + gap;
   }
   panel.rotation.x = -Math.PI / 2;
@@ -103,10 +103,10 @@ function renderScene() {
 function updateStats() {
   const d = derive(state);
   const panel = buildPanel(state);
-  const stand = buildStand(state);
+  const rack = buildRack(state);
 
   const pVol = meshVolume(collectTriangles(panel));
-  const sVol = d.hasStand ? meshVolume(collectTriangles(stand)) : 0;
+  const sVol = d.hasRack ? meshVolume(collectTriangles(rack)) : 0;
   const density = DENSITY[state.material] ?? 1.25;
 
   const panelG = (pVol * SHELL.panel * density) / 1000;
@@ -115,7 +115,7 @@ function updateStats() {
 
   $('mSize').textContent = `${num(d.width)} × ${num(d.height)} × ${num(d.thickness)}`;
   $('mMass').textContent = `≈ ${panelG.toFixed(1)} g`;
-  $('mMass').title = d.hasStand
+  $('mMass').title = d.hasRack
     ? `panel ≈${panelG.toFixed(1)} g + easel ≈${standG.toFixed(1)} g`
     : 'panel only';
   $('mTime').textContent = fmtTime(
@@ -232,12 +232,12 @@ function exportOne(which) {
     return;
   }
 
-  if (which === 'stand') {
-    if (!d.hasStand) {
+  if (which === 'rack') {
+    if (!d.hasRack) {
       flash('no easel with these settings');
       return;
     }
-    const g = buildStand(state);
+    const g = buildRack(state);
     const tris = toPrintSpace(collectTriangles(g), 'upright');
     download(buildSTL(tris, 'easel'), 'easel.stl');
     flash('easel exported');
@@ -246,7 +246,7 @@ function exportOne(which) {
 
   if (which === 'both') {
     const parts = [{ tris: collectTriangles(buildPanel(state)), mode: 'flat' }];
-    if (d.hasStand) parts.push({ tris: collectTriangles(buildStand(state)), mode: 'upright' });
+    if (d.hasRack) parts.push({ tris: collectTriangles(buildRack(state)), mode: 'upright' });
     const tris = packSideBySide(parts);
     const b = printBounds(tris);
     if (b.w > 178 || b.d > 178) {
@@ -353,7 +353,7 @@ function bind() {
 
   for (const [id, key] of [
     ['mode', 'mode'],
-    ['stand', 'stand'],
+    ['mount', 'mount'],
     ['material', 'material'],
   ]) {
     const grp = $(id);
@@ -394,7 +394,7 @@ function bind() {
   $('reframe').addEventListener('click', () => viewer.frame());
 
   $('dlPanel').addEventListener('click', () => exportOne('panel'));
-  $('dlStand').addEventListener('click', () => exportOne('stand'));
+  $('dlRack').addEventListener('click', () => exportOne('rack'));
   $('dlBoth').addEventListener('click', () => exportOne('both'));
   $('dlCoupon').addEventListener('click', () => exportOne('coupon'));
 
@@ -435,7 +435,7 @@ function restore() {
     $('number').value = state.number;
     for (const [id, key] of [
       ['mode', 'mode'],
-      ['stand', 'stand'],
+      ['mount', 'mount'],
       ['material', 'material'],
     ]) {
       for (const b of $(id).querySelectorAll('button')) {
@@ -458,4 +458,6 @@ renderScene();
 updateStats();
 refreshRecipe();
 viewer.frame();
+
+
 

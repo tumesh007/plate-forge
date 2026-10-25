@@ -2,7 +2,7 @@
  * Headless checks for the geometry. Not part of the published site.
  * Run from the workspace root:  node plate-forge/test/check.mjs
  */
-import { buildPanel, buildStand, buildCoupon, derive } from '../js/model.js';
+import { buildPanel, buildRack, buildCoupon, derive } from '../js/model.js';
 import { collectTriangles, meshVolume, toPrintSpace, printBounds, buildSTL } from '../js/stl.js';
 
 let failures = 0;
@@ -56,8 +56,8 @@ const base = {
   number: '98765 43210',
   mode: 'engrave',
   digitHeight: 18,
-  stroke: 0.19,
-  gap: 0.05,
+  stroke: 0.13,
+  gap: 0.025,
   tracking: 0.16,
   aspect: 0.62,
   relief: 0.6,
@@ -65,7 +65,7 @@ const base = {
   radius: 4,
   padX: 8,
   padY: 6,
-  stand: 'easel',
+  mount: 'rack',
   tilt: 30,
   material: 'PETG',
   profile: 'standard',
@@ -75,7 +75,7 @@ const d0 = derive(base);
 console.log(`  panel ${d0.width.toFixed(1)} x ${d0.height.toFixed(1)} x ${d0.thickness} mm`);
 console.log(`  ${d0.bars.length} bars, stroke ${d0.strokeMm.toFixed(2)} mm`);
 checkClosed('panel', buildPanel(base));
-checkClosed('easel', buildStand(base));
+checkClosed('easel', buildRack(base));
 
 console.log('\n— raised digits —');
 checkClosed('panel raised', buildPanel({ ...base, mode: 'emboss' }));
@@ -89,8 +89,8 @@ checkClosed('panel, all 1s', buildPanel({ ...base, number: '11111 11111' }));
 checkClosed('panel, dots', buildPanel({ ...base, number: '9.8.7' }));
 checkClosed('panel, deep relief', buildPanel({ ...base, relief: 1.2 }));
 checkClosed('panel, thin 1.6', buildPanel({ ...base, thickness: 1.6, relief: 0.6 }));
-checkClosed('easel, 20°', buildStand({ ...base, tilt: 20 }));
-checkClosed('easel, 40°', buildStand({ ...base, tilt: 40 }));
+checkClosed('easel, 20°', buildRack({ ...base, tilt: 20 }));
+checkClosed('easel, 40°', buildRack({ ...base, tilt: 40 }));
 
 function buildClosedSafe(p) {
   return buildPanel({ ...base, ...p });
@@ -99,7 +99,7 @@ function buildClosedSafe(p) {
 console.log('\n— print space —');
 for (const [name, obj, mode] of [
   ['panel', buildPanel(base), 'flat'],
-  ['easel', buildStand(base), 'upright'],
+  ['easel', buildRack(base), 'upright'],
 ]) {
   const t = toPrintSpace(collectTriangles(obj), mode);
   const b = printBounds(t);
@@ -123,4 +123,5 @@ ok(blob.size === 84 + n * 50, `STL size ${blob.size} bytes for ${n} triangles`);
 
 console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`}\n`);
 process.exit(failures === 0 ? 0 : 1);
+
 

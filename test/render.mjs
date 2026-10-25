@@ -237,7 +237,7 @@ render(
     { tris: gather(solo), color: WHITE },
     { tris: gather(soloInk), color: INK },
   ],
-  [-38, 26, 190],
+  [-28, 44, 310],
   [0, 15, 0],
   'plate-forge/test/front.ppm',
 );
@@ -253,4 +253,5 @@ render(
   [-50, 14, 0],
   'plate-forge/test/zoom-ink.ppm',
 );
+
 

@@ -23,7 +23,7 @@
 number = "98765 43210";
 
 // What to generate on the plate
-mode = "both"; // [both:Panel + easel, panel:Panel only, easel:Easel only, coupon:Pen test coupon]
+mode = "both"; // [both:Panel + rack, panel:Panel only, rack:Rack only, coupon:Pen test coupon]
 
 /* [Digit relief] */
 
@@ -59,6 +59,8 @@ rake_deg = 30; // [0:1:45]
 easel_fin = 4; // [3:0.5:6]
 easel_clearance = 0.4;
 easel_lip = 10; // [4:1:14]
+
+with_rack = (mode == "both" || mode == "rack");
 
 /* [Hidden] */
 
@@ -137,11 +139,41 @@ module bar(r, h) {
         square([(r[2] - r[0]) * h, (r[3] - r[1]) * h]);
 }
 
+module side_bar(upper, lower, x0, x1, h, s, g) {
+    top = 1 - s;
+    mid = 0.5 - s / 2;
+    if (upper && lower)
+        bar([x0, s + g, x1, top - g], h);
+    else if (upper)
+        bar([x0, mid + s + g, x1, top - g], h);
+    else if (lower)
+        bar([x0, s + g, x1, mid - g], h);
+}
+
+/**
+ * One digit. The middle bar is inset from both cell edges so the left and right
+ * verticals can run as ONE continuous stroke when both halves are lit — a split
+ * vertical is what makes a 7, 1 or 4 look like three floating dashes.
+ */
 module digit_glyph(d, h, s, g) {
     cell = d == 1 ? narrow : aspect;
     set = SEGS[d];
-    for (i = [0:len(set) - 1])
-        bar(seg_rect(cell, s, g, set[i]), h);
+    top = 1 - s;
+    mid = 0.5 - s / 2;
+    has = function(k) len(search(k, set)) > 0;
+
+    if (has("A")) bar([0, top, cell, 1], h);
+    if (has("D")) bar([0, 0, cell, s], h);
+    if (has("G")) bar([s + g, mid, cell - s - g, mid + s], h);
+
+    if (d == 1) {
+        // single centred column
+        xc = cell / 2;
+        bar([xc - s / 2, s + g, xc + s / 2, top - g], h);
+    } else {
+        side_bar(has("F"), has("E"), 0, s, h, s, g);
+        side_bar(has("B"), has("C"), cell - s, cell, h, s, g);
+    }
 }
 
 /** One non-digit character. */
@@ -200,6 +232,12 @@ module panel(str = number, h = -1, thick = panel_thickness, rad = corner_radius)
             linear_extrude(height = thick)
                 rounded_rect(w, hp, rad);
 
+            // detent pocket in the bottom edge, for the rack's click
+            if (with_rack) {
+                translate([w / 2 - 32, -1, -1])
+                    cube([10, 0.9 + 1, thick + 2]);
+            }
+
             if (lettering == "engraved")
                 translate([w / 2, end_gap, thick - rel])
                     linear_extrude(height = rel + 1)
@@ -219,61 +257,128 @@ module panel(str = number, h = -1, thick = panel_thickness, rad = corner_radius)
 
 function fin_h(panel_h) = max(8, panel_h * 0.86);
 
-module easel() {
+function lip_height() = min(easel_lip, max(4, panel_height(fitted_height()) * 0.22));
+
+/** A box given in plate-frame extents: u across, v up the plate, w along the normal. */
+module pbox(u0, u1, v0, v1, w0, w1) {
+    uc = (u0 + u1) / 2;
+    vc = (v0 + v1) / 2;
+    wc = (w0 + w1) / 2;
+    base = lip_height();
+    translate([uc,
+               base + vc * cos(rake_deg) + wc * sin(rake_deg),
+               -vc * sin(rake_deg) + wc * cos(rake_deg)])
+        rotate([-rake_deg, 0, 0])
+            cube([u1 - u0 + 0.1, v1 - v0 + 0.1, w1 - w0 + 0.1], center = true);
+}
+
+/**
+ * The rack the panel slides into.
+ *
+ * A frame sits behind the panel, and three rails (bottom, top, far end) stand outboard
+ * of it, each with a lip that overlaps the number face. The panel enters from the open
+ * near end and travels the channel; a detent on the floor clicks into the pocket in the
+ * panel's bottom edge. Nothing is glued, and a firm pull cams the detent back out.
+ *
+ * The near 6 mm of the panel stands proud of the rack so there is something to grip.
+ */
+module rack() {
     hh = fitted_height();
     pw = panel_width(number, hh);
     ph = panel_height(hh);
     th = panel_thickness;
-    half_inner = pw / 2 + easel_clearance;
-    stand_w = 2 * half_inner + 2 * easel_fin;
-    lip = min(easel_lip, max(4, ph * 0.22));
-    hb = fin_h(ph);
-    rear = max(16, min(46, ph * 0.62));
-    tanr = tan(rake_deg);
+    base = lip_height();
 
-    // side profile in (z, y)
-    A = [-hb * tanr, lip + hb];
-    B = [0, lip];
+    cl = 0.3;
+    topcl = 1.1;
+    tb = 2.4;
+    bw = 7;
+    railT = 3.2;
+    lipT = 1.6;
+    lipIn = 2.6;
+    wcl = 0.25;
+    grip = 6;
+    detent = 0.9;
+
+    x0 = -pw / 2;
+    x1 = pw / 2;
+    chU0 = x0 + grip;
+    chU1 = x1 + cl;
+    wLip = wcl + th;
+
+    // frame behind the panel: four bands, middle open
+    pbox(x0 - bw, chU0, -bw, ph + topcl + bw, -tb, 0);
+    pbox(chU0, chU1, -bw, 0, -tb, 0);
+    pbox(chU0, chU1, ph + topcl, ph + topcl + bw, -tb, 0);
+    pbox(chU1, x1 + bw, -bw, ph + topcl + bw, -tb, 0);
+
+    // rails, outboard of the panel
+    pbox(chU0, x1 + bw, -railT, 0, 0, wLip);
+    pbox(chU0, x1 + bw, ph + topcl, ph + topcl + railT, 0, wLip);
+    pbox(chU1, chU1 + railT, 0, ph + topcl, 0, wLip);
+
+    // lips, overlapping the number face
+    pbox(chU0, x1 + bw, 0, lipIn, wLip, wLip + lipT);
+    pbox(chU0, x1 + bw, ph - lipIn, ph, wLip, wLip + lipT);
+    pbox(chU1 - lipIn, chU1, 0, ph, wLip, wLip + lipT);
+
+    // detent: a stepped pyramid on the channel floor, ramped in and out
+    n0 = x1 - 32;
+    n1 = n0 + 10;
+    for (i = [0:3]) {
+        inset = (detent - 0.1) * (1 - (i + 1) / 4);
+        hgt = (detent - 0.1) * ((i + 1) / 4);
+        pbox(n0 + inset, n1 - inset, 0, hgt, 0, th + wcl);
+    }
+
+    // stance: plinth, two fins, tie
+    rack_w = pw + 2 * bw;
+    plinth_d = th + 6;
+    translate([-rack_w / 2, 0, -1.5])
+        cube([rack_w, base, plinth_d + 1.5]);
+
+    tanr = tan(rake_deg);
+    hb = max(8, ph * 0.86);
+    rear = max(16, min(46, ph * 0.62));
+    A = [-hb * tanr, base + hb];
+    B = [0, base];
     C = [0, 0];
     D = [-rear, 0];
-
     for (sgn = [-1, 1]) {
-        xr = sgn > 0 ? half_inner + easel_fin : -half_inner;
-        translate([xr, 0, 0])
+        xl = sgn > 0 ? rack_w / 2 : -rack_w / 2;
+        translate([xl, 0, 0])
             rotate([0, -90, 0])
-                linear_extrude(height = easel_fin)
+                linear_extrude(height = 4)
                     polygon(points = [A, B, C, D]);
     }
 
-    // plinth: the panel stands on it, and its front face is the lip that stops
-    // the panel skating forward
-    pd = th + 6;
-    translate([-stand_w / 2, 0, -1.5])
-        cube([stand_w, lip, pd + 1.5]);
-
-    // rear tie so the fins cannot splay
-    translate([-stand_w / 2, 0, -rear * 0.62 - 2.5])
-        cube([stand_w, 4, 5]);
+    translate([-rack_w / 2, 0, -rear * 0.62 - 2.5])
+        cube([rack_w, 4, 5]);
 }
 
-/** The easel turned so its up axis is Z, i.e. exactly as it prints. */
-module easel_on_bed() {
-    translate([0, panel_thickness + 6, 0])
-        rotate([90, 0, 0])
-            easel();
+/** The rack as it prints: up is already Z, so it needs no rotation. */
+module rack_on_bed() {
+    rotate([90, 0, 0]) rack();
 }
-
-/** Panel seated in the easel at the chosen rake. */
+/** Panel seated in the rack: it lies in the plate frame, so only the origin moves. */
 module assembly() {
     hh = fitted_height();
-    ph = panel_height(hh);
-    lip = min(easel_lip, max(4, ph * 0.22));
-    easel();
-    translate([0, lip, 0])
+    pw = panel_width(number, hh);
+    base = lip_height();
+    wcl = 0.25;
+    rack();
+    translate([0, base + wcl * sin(rake_deg), wcl * cos(rake_deg)])
         rotate([-rake_deg, 0, 0])
-            translate([-panel_width(number, hh) / 2, 0, 0])
+            translate([-pw / 2, 0, 0])
                 panel();
 }
+
+mw_plate_1();
+
+
+
+
+
 
 // ---------------------------------------------------------------------------
 //  Pen test coupon — one short print that tells you which relief takes ink
@@ -311,7 +416,6 @@ module coupon() {
 //  Output
 // ---------------------------------------------------------------------------
 
-/** Everything for the selected mode, laid out on the build plate. */
 module plate_contents() {
     hh = fitted_height();
     pw = panel_width(number, hh);
@@ -319,14 +423,13 @@ module plate_contents() {
 
     if (mode == "panel") {
         translate([-pw / 2, 0, 0]) panel();
-    } else if (mode == "easel") {
-        translate([0, 0, 0]) easel_on_bed();
+    } else if (mode == "rack") {
+        rack_on_bed();
     } else if (mode == "coupon") {
         coupon();
     } else {
-        // panel flat on the bed, easel standing in front of it
-        translate([-pw / 2, ph + plate_gap, 0]) panel();
-        translate([0, 0, 0]) easel_on_bed();
+        translate([-pw / 2, ph + 8, 0]) panel();
+        rack_on_bed();
     }
 }
 
@@ -339,3 +442,7 @@ module mw_assembly_view() {
 }
 
 mw_plate_1();
+
+
+
+

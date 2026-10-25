@@ -6,7 +6,7 @@
     <title>Plate Forge — car parking number plate generator</title>
     <meta
       name="description"
-      content="Parametric single-colour 3D-printable car parking phone number plate. Engraved digits you can fill with a pen, a reusable tilted easel, and an STL in one click."
+      content="Parametric single-colour 3D-printable car parking phone number plate. Engraved digits you can fill with a pen, a reusable slide-in rack, and an STL in one click."
     />
     <link rel="stylesheet" href="./css/app.css" />
     <script type="importmap">
@@ -114,10 +114,10 @@
         </section>
 
         <section class="grp">
-          <h2>Tilt</h2>
-          <div class="seg" id="stand" role="radiogroup" aria-label="Stand">
-            <button data-val="easel" class="on" role="radio" aria-checked="true">
-              Easel<span>separate, reusable</span>
+          <h2>Mount</h2>
+          <div class="seg" id="mount" role="radiogroup" aria-label="Mount">
+            <button data-val="rack" class="on" role="radio" aria-checked="true">
+              Slide-in rack<span>channel + click lock</span>
             </button>
             <button data-val="none" role="radio" aria-checked="false">
               Panel only<span>stick it down yourself</span>
@@ -197,7 +197,7 @@
     <footer class="exportbar">
       <div class="exp-label">Download</div>
       <button class="primary" id="dlPanel">Number panel&nbsp;<span class="kbd">.stl</span></button>
-      <button id="dlStand" class="secondary">Easel&nbsp;<span class="kbd">.stl</span></button>
+      <button id="dlRack" class="secondary">Rack&nbsp;<span class="kbd">.stl</span></button>
       <button id="dlBoth" class="secondary">Both on one plate</button>
       <button id="dlCoupon" class="secondary">Pen test coupon</button>
       <span class="spacer"></span>
@@ -207,6 +207,7 @@
     <script type="module" src="./js/app.js"></script>
   </body>
 </html>
+
 
 
 

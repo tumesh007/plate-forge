@@ -36,28 +36,40 @@ const NARROW = new Set(['1']);
 const SPACE_ADVANCE = 0.34;
 
 /**
- * The seven bar footprints of a unit cell, already separated by `gap`.
- * Everything is in cap-height units: y spans 0..1, x spans 0..cell.
+ * Digit geometry.
  *
- * The horizontal bars run the full cell width and the vertical bars stop short of
- * them, which is what makes a 7-segment digit read as a digit rather than as two
- * columns with nubs between. Nothing here touches or overlaps: every pair is
- * separated by exactly `gap`.
+ * The top and bottom bars run the full cell width. The middle bar is inset from both
+ * edges, which lets the left and right verticals merge into ONE continuous stroke when
+ * both halves of a side are lit — exactly what a real LCD does. A split vertical is the
+ * difference between a readable 7, 1 and 4 and three floating dashes.
+ *
+ * Nothing here touches or overlaps: every pair is separated by exactly `gap`.
+ *
+ * Bar rectangles for one digit are built in cap-height units: y spans 0..1, x spans
+ * 0..cell.
  */
-function skeleton(s, gap, cell) {
+function digitBars(segs, s, gap, cell) {
   const top = 1 - s;
   const mid = 0.5 - s / 2;
-  const up = mid + s + gap; // first y above the middle bar
-  const dn = mid - gap; // last y below the middle bar
-  return {
-    A: [0, top, cell, 1], // top
-    D: [0, 0, cell, s], // bottom
-    G: [0, mid, cell, mid + s], // middle
-    F: [0, up, s, top - gap], // upper left
-    B: [cell - s, up, cell, top - gap], // upper right
-    E: [0, s + gap, s, dn], // lower left
-    C: [cell - s, s + gap, cell, dn], // lower right
+  const has = (k) => segs.includes(k);
+  const bars = [];
+
+  if (has('A')) bars.push([0, top, cell, 1]);
+  if (has('D')) bars.push([0, 0, cell, s]);
+  if (has('G')) bars.push([s + gap, mid, cell - s - gap, mid + s]);
+
+  // A merged vertical can run from s + gap to 1 - s - gap: the inset middle bar
+  // leaves nothing for it to collide with.
+  const side = (upper, lower, x0, x1) => {
+    if (upper && lower) bars.push([x0, s + gap, x1, top - gap]);
+    else if (upper) bars.push([x0, mid + s + gap, x1, top - gap]);
+    else if (lower) bars.push([x0, s + gap, x1, mid - gap]);
   };
+
+  side(has('F'), has('E'), 0, s);
+  side(has('B'), has('C'), cell - s, cell);
+
+  return bars;
 }
 
 /** Build the bar rectangles for one character, in the unit box. */
@@ -109,15 +121,13 @@ function charGeometry(ch, s, gap, aspect) {
 
   const narrow = NARROW.has(ch);
   const cell = narrow ? 0.36 : aspect;
-  const seg = skeleton(s, gap, cell);
+  let bars = digitBars(segs, s, gap, cell);
 
-  const bars = segs.split('').map((k) => {
-    const r = seg[k];
-    if (!narrow) return [...r];
-    // Collapse the two right-hand bars to one centred column.
+  if (narrow) {
+    // "1" is a single column; centre it in its own narrow cell.
     const xc = cell / 2;
-    return [xc - s / 2, r[1], xc + s / 2, r[3]];
-  });
+    bars = bars.map((r) => [xc - s / 2, r[1], xc + s / 2, r[3]]);
+  }
 
   return { advance: cell, bars };
 }
