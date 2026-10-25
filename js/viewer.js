@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { OrbitControls } from '../vendor/OrbitControls.js?v=4';
+import { OrbitControls } from '../vendor/OrbitControls.js?v=5';
 
 /**
  * Minimal Y-up viewer: build plate, three-point-ish lighting, orbit camera.
@@ -140,5 +140,6 @@ export function createViewer(canvas) {
 
   return { scene, camera, renderer, controls, add, clear, frame, invalidate };
 }
+
 
 

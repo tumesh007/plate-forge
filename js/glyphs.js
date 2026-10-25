@@ -72,8 +72,36 @@ function digitBars(segs, s, gap, cell) {
   return bars;
 }
 
+/**
+ * Styled variant: same rectilinear language, but the two digits that read badly as
+ * bare segments get their conventional furniture.
+ *
+ *   "1"  a flag off the top-left of the stem and a full-width base serif, so it reads
+ *        as a one rather than as a bar.
+ *   "4"  the top bar is added, which closes the counter — the enclosed space is what
+ *        the eye uses to identify a four.
+ *
+ * Still no diagonals, so the front face stays an exact rectilinear grid.
+ */
+function styledDigitBars(d, s, gap, cell) {
+  const top = 1 - s;
+
+  if (d === 1) {
+    const xc = cell / 2;
+    return [
+      [0, top, xc + s / 2, 1], // flag
+      [xc - s / 2, s + gap, xc + s / 2, top - gap], // stem
+      [0, 0, cell, s], // base serif
+    ];
+  }
+
+  // "4" = the normal segments plus the top bar, which closes the counter
+  const segs = d === 4 ? 'AFGBC' : DIGITS[d];
+  return digitBars(segs, s, gap, cell);
+}
+
 /** Build the bar rectangles for one character, in the unit box. */
-function charGeometry(ch, s, gap, aspect) {
+function charGeometry(ch, s, gap, aspect, style) {
   if (ch === ' ') return { advance: SPACE_ADVANCE, bars: [] };
 
   const h = gap / 2;
@@ -121,10 +149,11 @@ function charGeometry(ch, s, gap, aspect) {
 
   const narrow = NARROW.has(ch);
   const cell = narrow ? 0.36 : aspect;
-  let bars = digitBars(segs, s, gap, cell);
+  const styled = style !== 'digital';
+  let bars = styled ? styledDigitBars(Number(ch), s, gap, cell) : digitBars(segs, s, gap, cell);
 
-  if (narrow) {
-    // "1" is a single column; centre it in its own narrow cell.
+  if (narrow && !styled) {
+    // digital "1" is a single column; centre it in its own narrow cell.
     const xc = cell / 2;
     bars = bars.map((r) => [xc - s / 2, r[1], xc + s / 2, r[3]]);
   }
@@ -155,7 +184,8 @@ export function layoutText(text, o) {
   const chars = [...String(text)];
   if (!chars.length) return { bars: [], width: 0, height };
 
-  const geo = chars.map((c) => charGeometry(c, stroke, gap, aspect));
+  const style = o.style === 'digital' ? 'digital' : 'styled';
+  const geo = chars.map((c) => charGeometry(c, stroke, gap, aspect, style));
   const advanceTotal = geo.reduce((a, g) => a + g.advance, 0);
   const trackTotal = Math.max(0, chars.length - 1) * tracking;
   const widthU = advanceTotal + trackTotal;
@@ -187,5 +217,8 @@ export function sanitize(raw) {
     .join('')
     .slice(0, 16);
 }
+
+
+
 
 

@@ -10,13 +10,14 @@
  * the bed, number face up. Nothing needs flipping and nothing needs supports.
  */
 import * as THREE from 'three';
-import { layoutText } from './glyphs.js?v=4';
+import { layoutText } from './glyphs.js?v=5';
 
 const deg = Math.PI / 180;
 
 export const DEFAULT_PARAMS = {
   number: '98765 43210',
   mode: 'engrave', // 'engrave' | 'emboss'
+  style: 'styled', // 'styled' | 'digital'
   digitHeight: 18,
   stroke: 0.13,
   gap: 0.025,
@@ -424,6 +425,7 @@ export function derive(p) {
     gap: p.gap,
     tracking: p.tracking,
     aspect: p.aspect,
+    style: p.style,
   });
   const availW = Math.max(30, MAX_PANEL_W - p.padX * 2);
   const fitScale = probe.width > availW ? availW / probe.width : 1;
@@ -435,6 +437,7 @@ export function derive(p) {
     gap: p.gap,
     tracking: p.tracking,
     aspect: p.aspect,
+    style: p.style,
   });
 
   const width = Math.max(40, text.width + p.padX * 2);
@@ -694,6 +697,8 @@ export function fits(p) {
   const h = d.hasRack ? d.rackHeight : d.thickness;
   return { w, dep, h, ok: w <= 176 && dep <= 176 && h <= 176 };
 }
+
+
 
 
 

@@ -10,7 +10,7 @@ import {
   buildInk,
   seatPanel,
   fits,
-} from './model.js?v=4';
+} from './model.js?v=5';
 import {
   collectTriangles,
   meshVolume,
@@ -19,9 +19,9 @@ import {
   buildSTL,
   download,
   packSideBySide,
-} from './stl.js?v=4';
-import { createViewer } from './viewer.js?v=4';
-import { sanitize } from './glyphs.js?v=4';
+} from './stl.js?v=5';
+import { createViewer } from './viewer.js?v=5';
+import { sanitize } from './glyphs.js?v=5';
 
 const DENSITY = { PLA: 1.24, PETG: 1.27 }; // g/cm^3
 const $ = (id) => document.getElementById(id);
@@ -360,6 +360,7 @@ function bind() {
 
   for (const [id, key] of [
     ['mode', 'mode'],
+    ['style', 'style'],
     ['mount', 'mount'],
     ['material', 'material'],
   ]) {
@@ -442,6 +443,7 @@ function restore() {
     $('number').value = state.number;
     for (const [id, key] of [
       ['mode', 'mode'],
+      ['style', 'style'],
       ['mount', 'mount'],
       ['material', 'material'],
     ]) {
@@ -465,6 +467,9 @@ renderScene();
 updateStats();
 refreshRecipe();
 viewer.frame();
+
+
+
 
 
 

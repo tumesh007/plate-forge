@@ -8,11 +8,11 @@
       name="description"
       content="Parametric single-colour 3D-printable car parking phone number plate. Engraved digits you can fill with a pen, a reusable slide-in rack, and an STL in one click."
     />
-    <link rel="stylesheet" href="./css/app.css?v=4" />
+    <link rel="stylesheet" href="./css/app.css?v=5" />
     <script type="importmap">
       {
         "imports": {
-          "three": "./vendor/three.module.js?v=4"
+          "three": "./vendor/three.module.js?v=5"
         }
       }
     </script>
@@ -26,7 +26,7 @@
       </div>
       <div class="topbar-right">
         <span class="pill" id="fitPill">A1 mini · 180&nbsp;mm</span>
-        <span class="pill mono" id="buildPill">build 4 · top-load rack</span>
+        <span class="pill mono" id="buildPill">build 5 · styled digits</span>
         <a class="pill ghost" href="https://github.com/tumesh007/plate-forge" target="_blank" rel="noopener"
           >source</a
         >
@@ -58,6 +58,15 @@
             </button>
             <button data-val="emboss" role="radio" aria-checked="false">
               Raised<span>wipe a pen across the tops</span>
+            </button>
+          </div>
+
+          <div class="seg" id="style" role="radiogroup" aria-label="Letter style">
+            <button data-val="styled" class="on" role="radio" aria-checked="true">
+              Styled<span>1 with flag, closed 4</span>
+            </button>
+            <button data-val="digital" role="radio" aria-checked="false">
+              Digital<span>plain 7-segment</span>
             </button>
           </div>
 
@@ -205,9 +214,11 @@
       <span class="footnote" id="footnote">mm · Y-up preview · Z-up STL</span>
     </footer>
 
-    <script type="module" src="./js/app.js?v=4"></script>
+    <script type="module" src="./js/app.js?v=5"></script>
   </body>
 </html>
+
+
 
 
 
