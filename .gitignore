@@ -1,5 +1,6 @@
 node_modules/
 *.ppm
 *.stl
+scadtest/
 .DS_Store
-
+__pycache__/
