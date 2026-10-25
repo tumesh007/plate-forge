@@ -167,18 +167,37 @@ export function download(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
-/** Lay several parts out side by side on one bed and merge them into one soup. */
-export function packSideBySide(parts, gap = 10) {
+/**
+ * Lay several parts out on one bed and merge them into one soup. Uses simple shelf
+ * packing: parts go left to right, and wrap onto a new row when the next one would
+ * overrun the bed. A full-length panel plus the easel is 324 mm wide side by side, so
+ * without wrapping the "both on one plate" export could never succeed.
+ */
+export function packSideBySide(parts, gap = 8, maxSpan = 174) {
   const chunks = [];
-  let cursor = 0;
+  let cursorX = 0;
+  let cursorY = 0;
+  let rowDepth = 0;
+
   for (const part of parts) {
     const t = toPrintSpace(part.tris, part.mode);
     const b = printBounds(t);
-    const shift = cursor - (-b.w / 2);
-    for (let i = 0; i < t.length; i += 3) t[i] += shift;
-    cursor += b.w + gap;
+    if (cursorX > 0 && cursorX + b.w > maxSpan) {
+      cursorX = 0;
+      cursorY += rowDepth + gap;
+      rowDepth = 0;
+    }
+    const dx = cursorX + b.w / 2;
+    const dy = cursorY;
+    for (let i = 0; i < t.length; i += 3) {
+      t[i] += dx;
+      t[i + 1] += dy;
+    }
+    cursorX += b.w + gap;
+    rowDepth = Math.max(rowDepth, b.d);
     chunks.push(t);
   }
+
   const total = chunks.reduce((a, c) => a + c.length, 0);
   const out = new Float32Array(total);
   let o = 0;
@@ -186,15 +205,24 @@ export function packSideBySide(parts, gap = 10) {
     out.set(c, o);
     o += c.length;
   }
+
   // Re-centre the whole plate on the bed.
   let minX = Infinity;
   let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
   for (let i = 0; i < out.length; i += 3) {
     if (out[i] < minX) minX = out[i];
     if (out[i] > maxX) maxX = out[i];
+    if (out[i + 1] < minY) minY = out[i + 1];
+    if (out[i + 1] > maxY) maxY = out[i + 1];
   }
-  const c = (minX + maxX) / 2;
-  for (let i = 0; i < out.length; i += 3) out[i] -= c;
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  for (let i = 0; i < out.length; i += 3) {
+    out[i] -= cx;
+    out[i + 1] -= cy;
+  }
   return out;
 }
 
