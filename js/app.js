@@ -10,7 +10,7 @@ import {
   buildInk,
   seatPanel,
   fits,
-} from './model.js?v=5';
+} from './model.js?v=6';
 import {
   collectTriangles,
   meshVolume,
@@ -19,9 +19,9 @@ import {
   buildSTL,
   download,
   packSideBySide,
-} from './stl.js?v=5';
-import { createViewer } from './viewer.js?v=5';
-import { sanitize } from './glyphs.js?v=5';
+} from './stl.js?v=6';
+import { createViewer } from './viewer.js?v=6';
+import { sanitize } from './glyphs.js?v=6';
 
 const DENSITY = { PLA: 1.24, PETG: 1.27 }; // g/cm^3
 const $ = (id) => document.getElementById(id);
@@ -69,12 +69,13 @@ function buildDisplayObjects() {
   const panel = buildPanel(state);
   if (state.showInk) panel.add(buildInk(state));
   const rack = buildRack(state);
+  const base = buildFoot(state);
   const d = derive(state);
-  return { panel, rack, d };
+  return { panel, rack, base, d };
 }
 
 function renderScene() {
-  const { panel, rack, d } = buildDisplayObjects();
+  const { panel, rack, base, d } = buildDisplayObjects();
   viewer.clear();
 
   if (state.layout === 'assembled') {
@@ -83,6 +84,7 @@ function renderScene() {
     rack.rotation.x = t.rotX;
     rack.position.set(0, t.y, 0);
     viewer.add(rack);
+    viewer.add(base);
     viewer.add(panel);
     return;
   }
@@ -98,6 +100,8 @@ function renderScene() {
     rack.rotation.x = -Math.PI / 2;
     rack.position.set(x + standW / 2, 0, 0);
     viewer.add(rack);
+    base.position.set(x + standW / 2, 0, 0);
+    viewer.add(base);
     x += standW + gap;
   }
   panel.rotation.x = -Math.PI / 2;
@@ -111,6 +115,7 @@ function updateStats() {
   const d = derive(state);
   const panel = buildPanel(state);
   const rack = buildRack(state);
+  const base = buildFoot(state);
 
   const pVol = meshVolume(collectTriangles(panel));
   const sVol = d.hasRack ? meshVolume(collectTriangles(rack)) : 0;
@@ -248,6 +253,14 @@ function exportOne(which) {
     const tris = toPrintSpace(collectTriangles(g), 'upright');
     download(buildSTL(tris, 'easel'), 'easel.stl');
     flash('easel exported');
+    return;
+  }
+
+  if (which === 'base') {
+    const g = buildFoot(state);
+    const tris = toPrintSpace(collectTriangles(g), 'upright');
+    download(buildSTL(tris, 'base'), 'base.stl');
+    flash('base exported');
     return;
   }
 
@@ -403,6 +416,7 @@ function bind() {
 
   $('dlPanel').addEventListener('click', () => exportOne('panel'));
   $('dlRack').addEventListener('click', () => exportOne('rack'));
+  $('dlBase').addEventListener('click', () => exportOne('base'));
   $('dlBoth').addEventListener('click', () => exportOne('both'));
   $('dlCoupon').addEventListener('click', () => exportOne('coupon'));
 
@@ -467,6 +481,9 @@ renderScene();
 updateStats();
 refreshRecipe();
 viewer.frame();
+
+
+
 
 
 

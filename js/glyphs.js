@@ -95,9 +95,20 @@ function styledDigitBars(d, s, gap, cell) {
     ];
   }
 
-  // "4" = the normal segments plus the top bar, which closes the counter
-  const segs = d === 4 ? 'AFGBC' : DIGITS[d];
-  return digitBars(segs, s, gap, cell);
+  if (d === 4) {
+    // A four is identified by a bar that runs clean across and past the stem. The
+    // top bar must NOT be added: with a closed top and no bottom bar it is the
+    // spitting image of a nine. Full-width crossbar, open top, no base bar.
+    const mid = 0.5 - s / 2;
+    return [
+      [0, mid, cell, mid + s], // crossbar, full width
+      [0, mid + s + gap, s, 1 - s - gap], // left arm above the bar
+      [cell - s, mid + s + gap, cell, 1 - s - gap], // stem above
+      [cell - s, s + gap, cell, mid - gap], // stem below
+    ];
+  }
+
+  return digitBars(DIGITS[d], s, gap, cell);
 }
 
 /** Build the bar rectangles for one character, in the unit box. */
@@ -217,6 +228,7 @@ export function sanitize(raw) {
     .join('')
     .slice(0, 16);
 }
+
 
 
 

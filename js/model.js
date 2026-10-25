@@ -10,7 +10,7 @@
  * the bed, number face up. Nothing needs flipping and nothing needs supports.
  */
 import * as THREE from 'three';
-import { layoutText } from './glyphs.js?v=5';
+import { layoutText } from './glyphs.js?v=6';
 
 const deg = Math.PI / 180;
 
@@ -577,42 +577,40 @@ export function buildFoot(p) {
   if (!d.hasRack) return g;
 
   const theta = d.tilt * deg;
-  const { width: W, thickness: T } = d;
-  const { bw, tb } = RACK;
+  const tan = Math.tan(theta);
+  const lip = d.lipH;
+  const hb = d.hb;
+  const rear = d.rearFoot;
+  const finT = 4.5;
+  const span = d.rackWidth;
 
-  const slotW = tb + 0.3; // the rack's plate thickness plus clearance
-  const slotD = 12; // how deep the rack sits into the slot
-  const back = 26; // how far the foot runs behind the plate
-  const wide = Math.min(W + 2 * bw, 150);
-  const front = 12; // how far it runs in front
-
-  // Side profile in (z, y): y is up, z runs back to front. The slot's floor is the
-  // sloping line the rack's back plate sits on.
+  // Side profile in (z, y): the front edge lies on the rack's back plane, the base
+  // lies on the bed. Every face is either vertical or a 20° overhang, which is why
+  // this shape prints standing with no supports.
   const shape = new THREE.Shape();
-  shape.moveTo(-back, 0);
-  shape.lineTo(front, 0);
-  shape.lineTo(front, 10);
-  shape.lineTo(-back, -back * Math.tan(theta) + 10);
+  shape.moveTo(-hb * tan, lip + hb);
+  shape.lineTo(0, lip);
+  shape.lineTo(0, 0);
+  shape.lineTo(-rear, 0);
   shape.closePath();
 
   const geo = new THREE.ExtrudeGeometry(shape, {
-    depth: wide,
+    depth: finT,
     bevelEnabled: false,
-    curveSegments: 4,
+    curveSegments: 2,
   });
-  // shape was authored in (z, y); map shape-X to world Z and extrude along X
   geo.rotateY(-Math.PI / 2);
-  geo.translate(wide / 2, 0, 0);
-  g.add(new THREE.Mesh(geo, null));
 
-  // relief for the rack's back plate: a groove along the sloping face
-  const groove = new THREE.Mesh(
-    new THREE.BoxGeometry(wide + 4, slotD, slotW),
-    null,
-  );
-  groove.position.set(0, 10 - slotD / 2 + 0.001, front - slotD * Math.tan(theta) * 0.5);
-  groove.userData.cutter = true;
-  g.add(groove);
+  for (const s of [-1, 1]) {
+    const fin = new THREE.Mesh(geo, null);
+    fin.position.x = s > 0 ? span / 2 : -span / 2 + finT;
+    g.add(fin);
+  }
+
+  // tie bar so the two gussets cannot splay
+  const tie = new THREE.Mesh(new THREE.BoxGeometry(span, 5, 5), null);
+  tie.position.set(0, 2.5, -rear * 0.7);
+  g.add(tie);
 
   return g;
 }
@@ -697,6 +695,8 @@ export function fits(p) {
   const h = d.hasRack ? d.rackHeight : d.thickness;
   return { w, dep, h, ok: w <= 176 && dep <= 176 && h <= 176 };
 }
+
+
 
 
 
