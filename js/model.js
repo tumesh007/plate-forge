@@ -10,7 +10,7 @@
  * the bed, number face up. Nothing needs flipping and nothing needs supports.
  */
 import * as THREE from 'three';
-import { layoutText } from './glyphs.js?v=3';
+import { layoutText } from './glyphs.js?v=4';
 
 const deg = Math.PI / 180;
 
@@ -694,6 +694,7 @@ export function fits(p) {
   const h = d.hasRack ? d.rackHeight : d.thickness;
   return { w, dep, h, ok: w <= 176 && dep <= 176 && h <= 176 };
 }
+
 
 
 

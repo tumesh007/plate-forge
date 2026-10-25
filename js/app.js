@@ -10,7 +10,7 @@ import {
   buildInk,
   seatPanel,
   fits,
-} from './model.js?v=3';
+} from './model.js?v=4';
 import {
   collectTriangles,
   meshVolume,
@@ -19,9 +19,9 @@ import {
   buildSTL,
   download,
   packSideBySide,
-} from './stl.js?v=3';
-import { createViewer } from './viewer.js?v=3';
-import { sanitize } from './glyphs.js?v=3';
+} from './stl.js?v=4';
+import { createViewer } from './viewer.js?v=4';
+import { sanitize } from './glyphs.js?v=4';
 
 const DENSITY = { PLA: 1.24, PETG: 1.27 }; // g/cm^3
 const $ = (id) => document.getElementById(id);
@@ -465,6 +465,7 @@ renderScene();
 updateStats();
 refreshRecipe();
 viewer.frame();
+
 
 
 
