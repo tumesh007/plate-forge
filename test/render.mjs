@@ -3,7 +3,7 @@
  * without a browser.  node plate-forge/test/render.mjs
  */
 import * as THREE from 'three';
-import { buildPanel, buildStand, buildInk, derive, seatPanel, DEFAULT_PARAMS } from '../js/model.js';
+import { buildPanel, buildRack, buildFoot, buildInk, derive, seatPanel, DEFAULT_PARAMS } from '../js/model.js';
 import { collectTriangles } from '../js/stl.js';
 import fs from 'node:fs';
 
@@ -182,7 +182,7 @@ const d = derive(P);
 const WHITE = [0.93, 0.93, 0.9];
 const INK = [0.06, 0.06, 0.07];
 
-const stand = { tris: gather(buildStand(P)), color: WHITE };
+const stand = { tris: gather(buildRack(P)), color: WHITE };
 
 // assembled
 const panel = buildPanel(P);
@@ -253,5 +253,6 @@ render(
   [-50, 14, 0],
   'plate-forge/test/zoom-ink.ppm',
 );
+
 
 

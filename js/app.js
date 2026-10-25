@@ -4,6 +4,8 @@ import {
   derive,
   buildPanel,
   buildRack,
+  buildFoot,
+  rackTransform,
   buildCoupon,
   buildInk,
   seatPanel,
@@ -77,19 +79,24 @@ function renderScene() {
 
   if (state.layout === 'assembled') {
     seatPanel(panel, state);
+    const t = rackTransform(state);
+    rack.rotation.x = t.rotX;
+    rack.position.set(0, t.y, 0);
     viewer.add(rack);
     viewer.add(panel);
     return;
   }
 
-  // "As printed": easel standing on the bed, panel lying flat beside it.
+  // "As printed": rack lying on its back plate, panel flat beside it.
   const standW = d.hasRack ? d.rackWidth : 0;
   const gap = 14;
   const totalW = standW + (d.hasRack ? gap : 0) + d.width;
   let x = -totalW / 2;
 
   if (d.hasRack) {
-    rack.position.x = x + standW / 2;
+    // the rack is authored in its print orientation already
+    rack.rotation.x = -Math.PI / 2;
+    rack.position.set(x + standW / 2, 0, 0);
     viewer.add(rack);
     x += standW + gap;
   }
@@ -458,6 +465,7 @@ renderScene();
 updateStats();
 refreshRecipe();
 viewer.frame();
+
 
 
 

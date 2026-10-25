@@ -44,17 +44,14 @@ const MAX_PANEL_W = 164;
 
 /** Every rack dimension, in mm. */
 export const RACK = {
-  cl: 0.3, // side clearance in the channel, at the closed end
-  topCl: 1.1, // headroom above the panel, so it can ride over the detent
-  tb: 2.4, // thickness of the frame behind the panel
-  bw: 7, // width of that frame
-  railT: 3.2, // how far the rails stand outboard of the channel
-  lipT: 1.6, // lip thickness in front of the number face
-  lipIn: 2.6, // how far the lip overlaps the number face
-  wCl: 0.25, // clearance between the panel back and the frame
-  grip: 6, // how far the panel stands proud at the loading end
+  cl: 0.35, // side clearance between plate edge and pillar
+  tb: 2.6, // back plate thickness (this face sits on the bed)
+  bw: 6, // border around the plate
+  pillarT: 3.5, // pillar width across
+  pillarH: 6, // pillar height off the back plate
+  lipT: 1.6, // lip thickness
+  lipIn: 3.0, // how far the lip overlaps the number face
   detent: 0.9, // how deep the click sits
-  fin: 4, // fin thickness
 };
 
 /* ------------------------------------------------------------------ 2D helpers */
@@ -501,23 +498,16 @@ export function derive(p) {
 
 /* ------------------------------------------------------------------ rack */
 
-function plateToWorld(u, v, w, theta, origin) {
-  return new THREE.Vector3(
-    u,
-    origin.y + v * Math.cos(theta) + w * Math.sin(theta),
-    origin.z - v * Math.sin(theta) + w * Math.cos(theta),
-  );
-}
-
 /**
- * The rack the panel slides into.
+ * The rack the panel drops into.
  *
- * A frame sits behind the panel, and three rails (bottom, top, far end) stand outboard
- * of it, each with a lip that overlaps the number face. The panel enters from the open
- * near end, travels the channel, and a detent on the floor clicks into the pocket in
- * the panel's bottom edge. Nothing is glued; a firm pull cams the detent back out.
+ * Two side pillars and a bottom ledge stand off a back plate, each finishing in a lip
+ * that overlaps the number face. The plate enters from the TOP, drops between the
+ * pillars, lands on the ledge and clicks into a detent. Nothing is glued.
  *
- * The near 6 mm of the panel stands proud of the rack so there is something to grip.
+ * Everything here is extruded perpendicular to the back plate in +w, so the part is
+ * modelled in its print orientation: lay the back plate on the bed and every feature
+ * rises vertically. No supports, no bridging.
  */
 export function buildRack(p) {
   const d = derive(p);
@@ -525,107 +515,104 @@ export function buildRack(p) {
   g.name = 'rack';
   if (!d.hasRack) return g;
 
-  const theta = d.tilt * deg;
   const { width: W, height: H, thickness: T, notch } = d;
-  const { cl, topCl, tb, bw, railT, lipT, lipIn, wCl, grip } = RACK;
-
+  const { cl, tb, bw, pillarT, pillarH, lipT, lipIn } = RACK;
   const x0 = -W / 2;
   const x1 = W / 2;
-  const origin = new THREE.Vector3(0, d.lipH, 0);
+  const top = H + bw;
+  const bot = -bw;
+  const ov = 0.05;
 
-  /**
-   * A box given in plate-frame extents.
-   *
-   * Every box is grown by `OV` so that neighbouring parts overlap rather than sit on a
-   * shared plane. Coincident faces between two solids make every edge on that plane
-   * appear four times, and a slicer can read the seam as an internal cavity.
-   */
-  const OV = 0.05;
-  const box = (u0, u1, v0, v1, w0, w1, grow = OV) => {
-    const geo = new THREE.BoxGeometry(
-      u1 - u0 + grow * 2,
-      v1 - v0 + grow * 2,
-      w1 - w0 + grow * 2,
-    );
-    geo.applyMatrix4(new THREE.Matrix4().makeRotationX(-theta));
-    const c = plateToWorld(
-      (u0 + u1) / 2,
-      (v0 + v1) / 2,
-      (w0 + w1) / 2,
-      theta,
-      origin,
-    );
-    geo.translate(c.x, c.y, c.z);
+  /** Box in rack coordinates: x across, y up, z out of the back plate (print up). */
+  const box = (u0, u1, v0, v1, w0, w1, gr = ov) => {
+    const geo = new THREE.BoxGeometry(u1 - u0 + gr * 2, v1 - v0 + gr * 2, w1 - w0 + gr * 2);
+    geo.translate((u0 + u1) / 2, (v0 + v1) / 2, (w0 + w1) / 2);
     return new THREE.Mesh(geo, null);
   };
 
-  const chU0 = x0 + grip; // open (loading) end
-  const chU1 = x1 + cl; // closed end
-  const wLip = wCl + T; // underside of the lips
+  /* back plate — this is the face that sits on the bed */
+  g.add(box(x0 - bw, x1 + bw, bot, top, 0, tb));
 
-  /* frame behind the panel: four bands, middle open */
-  g.add(box(x0 - bw, chU0, -bw, H + topCl + bw, -tb, 0));
-  g.add(box(chU0, chU1, -bw, 0, -tb, 0));
-  g.add(box(chU0, chU1, H + topCl, H + topCl + bw, -tb, 0));
-  g.add(box(chU1, x1 + bw, -bw, H + topCl + bw, -tb, 0));
+  /* the two pillars the plate slides between */
+  g.add(box(x0 - cl - pillarT, x0 - cl, bot, top, tb, tb + pillarH));
+  g.add(box(x1 + cl, x1 + cl + pillarT, bot, top, tb, tb + pillarH));
 
-  /* rails, outboard of the panel */
-  g.add(box(chU0, x1 + bw, -railT, 0, 0, wLip));
-  g.add(box(chU0, x1 + bw, H + topCl, H + topCl + railT, 0, wLip));
-  g.add(box(chU1, chU1 + railT, 0, H + topCl, 0, wLip));
+  /* bottom ledge: the plate lands on this */
+  g.add(box(x0 - cl, x1 + cl, bot, -cl, tb, tb + pillarH));
 
-  /* lips: overlap the number face by lipIn */
-  g.add(box(chU0, x1 + bw, 0, lipIn, wLip, wLip + lipT));
-  g.add(box(chU0, x1 + bw, H - lipIn, H, wLip, wLip + lipT));
-  g.add(box(chU1 - lipIn, chU1, 0, H, wLip, wLip + lipT));
+  /* lips: overlap the number face on both sides and the bottom */
+  g.add(box(x0 - cl, x0 - cl + lipIn, bot, top, tb + pillarH, tb + pillarH + lipT));
+  g.add(box(x1 + cl - lipIn, x1 + cl, bot, top, tb + pillarH, tb + pillarH + lipT));
+  g.add(box(x0 - cl, x1 + cl, -cl, -cl + lipIn, tb + pillarH, tb + pillarH + lipT));
 
-  /* detent on the channel floor: ramped in, ramped out. Its crest is deliberately
-     below the pocket floor so the panel always seats on the rail, not on the click. */
+  /* detent: a stepped wedge on the ledge, clicking into the plate's bottom pocket */
   if (notch) {
     const steps = 4;
-    const crest = notch.depth - 0.1;
+    const crest = RACK.detent - 0.1;
     for (let i = 0; i < steps; i++) {
       const inset = crest * (1 - (i + 1) / steps);
-      const hgt = crest * ((i + 1) / steps);
-      g.add(box(notch.x0 + inset, notch.x1 - inset, 0, hgt, 0, T + wCl, 0.02));
+      const rise = crest * ((i + 1) / steps);
+      g.add(
+        box(notch.x0 + inset, notch.x1 - inset, -cl, -cl + rise, tb, tb + T, 0.02),
+      );
     }
   }
-
-  /* stance: plinth, two fins, tie */
-  const plinthDepth = T + 6;
-  const plinth = new THREE.Mesh(
-    new THREE.BoxGeometry(d.rackWidth, d.lipH, plinthDepth + 1.5),
-    null,
-  );
-  plinth.position.set(0, d.lipH / 2, (plinthDepth + 1.5) / 2 - 1.5);
-  g.add(plinth);
-
-  const tan = Math.tan(theta);
-  const shape = new THREE.Shape();
-  shape.moveTo(-d.hb * tan, d.lipH + d.hb);
-  shape.lineTo(0, d.lipH);
-  shape.lineTo(0, 0);
-  shape.lineTo(-d.rearFoot, 0);
-  shape.closePath();
-  const finGeo = new THREE.ExtrudeGeometry(shape, {
-    depth: RACK.fin,
-    bevelEnabled: false,
-    curveSegments: 4,
-  });
-  finGeo.rotateY(-Math.PI / 2);
-  for (const s of [-1, 1]) {
-    const fin = new THREE.Mesh(finGeo, null);
-    fin.position.x = s > 0 ? d.rackWidth / 2 : -d.rackWidth / 2 + RACK.fin;
-    g.add(fin);
-  }
-
-  const tie = new THREE.Mesh(new THREE.BoxGeometry(d.rackWidth, 4, 5), null);
-  tie.position.set(0, 2, -d.rearFoot * 0.62);
-  g.add(tie);
 
   return g;
 }
 
+/**
+ * Wedge the rack stands in. A separate part only because a stand cannot be printed as
+ * part of a plate that lies flat on the bed — a foot has to reach behind the plate.
+ *
+ * Prints on its base: the sloping face is a 20° overhang, the slot is cut into it.
+ */
+export function buildFoot(p) {
+  const d = derive(p);
+  const g = new THREE.Group();
+  g.name = 'foot';
+  if (!d.hasRack) return g;
+
+  const theta = d.tilt * deg;
+  const { width: W, thickness: T } = d;
+  const { bw, tb } = RACK;
+
+  const slotW = tb + 0.3; // the rack's plate thickness plus clearance
+  const slotD = 12; // how deep the rack sits into the slot
+  const back = 26; // how far the foot runs behind the plate
+  const wide = Math.min(W + 2 * bw, 150);
+  const front = 12; // how far it runs in front
+
+  // Side profile in (z, y): y is up, z runs back to front. The slot's floor is the
+  // sloping line the rack's back plate sits on.
+  const shape = new THREE.Shape();
+  shape.moveTo(-back, 0);
+  shape.lineTo(front, 0);
+  shape.lineTo(front, 10);
+  shape.lineTo(-back, -back * Math.tan(theta) + 10);
+  shape.closePath();
+
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: wide,
+    bevelEnabled: false,
+    curveSegments: 4,
+  });
+  // shape was authored in (z, y); map shape-X to world Z and extrude along X
+  geo.rotateY(-Math.PI / 2);
+  geo.translate(wide / 2, 0, 0);
+  g.add(new THREE.Mesh(geo, null));
+
+  // relief for the rack's back plate: a groove along the sloping face
+  const groove = new THREE.Mesh(
+    new THREE.BoxGeometry(wide + 4, slotD, slotW),
+    null,
+  );
+  groove.position.set(0, 10 - slotD / 2 + 0.001, front - slotD * Math.tan(theta) * 0.5);
+  groove.userData.cutter = true;
+  g.add(groove);
+
+  return g;
+}
 /* ------------------------------------------------------------------ preview ink */
 
 export function buildInk(p) {
@@ -679,16 +666,27 @@ export function buildCoupon(p) {
 }
 
 /** Seat the panel in the rack for preview. */
+/** Rack frame -> world: lean it back by the rake and lift it onto its base. */
+export function rackTransform(p) {
+  const d = derive(p);
+  return { rotX: -d.tilt * deg, y: d.lipH };
+}
+
+/** Seat the panel inside the rack for preview. */
 export function seatPanel(panelGroup, p) {
   const d = derive(p);
   if (!d.hasRack) return panelGroup;
   const theta = d.tilt * deg;
-  const origin = new THREE.Vector3(0, d.lipH, 0);
-  panelGroup.position.copy(plateToWorld(0, 0, RACK.wCl, theta, origin));
-  panelGroup.rotation.x = -theta;
+  const yLocal = -RACK.cl;
+  const zLocal = RACK.tb;
+  panelGroup.rotation.set(-theta, 0, 0);
+  panelGroup.position.set(
+    0,
+    d.lipH + yLocal * Math.cos(theta) + zLocal * Math.sin(theta),
+    -yLocal * Math.sin(theta) + zLocal * Math.cos(theta),
+  );
   return panelGroup;
 }
-
 export function fits(p) {
   const d = derive(p);
   const w = Math.max(d.width, d.hasRack ? d.rackWidth : 0);
@@ -696,6 +694,8 @@ export function fits(p) {
   const h = d.hasRack ? d.rackHeight : d.thickness;
   return { w, dep, h, ok: w <= 176 && dep <= 176 && h <= 176 };
 }
+
+
 
 
 
