@@ -10,7 +10,7 @@ import {
   buildInk,
   seatPanel,
   fits,
-} from './model.js?v=7';
+} from './model.js?v=8';
 import {
   collectTriangles,
   meshVolume,
@@ -19,9 +19,9 @@ import {
   buildSTL,
   download,
   packSideBySide,
-} from './stl.js?v=7';
-import { createViewer } from './viewer.js?v=7';
-import { sanitize } from './glyphs.js?v=7';
+} from './stl.js?v=8';
+import { createViewer } from './viewer.js?v=8';
+import { sanitize } from './glyphs.js?v=8';
 
 const DENSITY = { PLA: 1.24, PETG: 1.27 }; // g/cm^3
 const $ = (id) => document.getElementById(id);
@@ -279,6 +279,7 @@ function flash(msg) {
 /* ------------------------------------------------------------------ binding */
 
 const RANGES = {
+  length: (v) => `${v} mm`,
   digitHeight: (v) => `${v} mm`,
   stroke: (v, d) => `${num(d.strokeMm, 2)} mm`,
   tracking: (v) => `${Math.round(v * 100)}%`,
@@ -307,8 +308,9 @@ function updateOutputs(d) {
 
 function syncStateFromDOM() {
   state.number = sanitize($('number').value) || '98765 43210';
-  for (const k of ['relief', 'digitHeight', 'stroke', 'tracking', 'thickness', 'radius', 'padX', 'padY', 'tilt']) {
-    state[k] = Number($(k).value);
+  for (const k of ['length', 'relief', 'digitHeight', 'stroke', 'tracking', 'thickness', 'radius', 'padX', 'padY', 'tilt']) {
+    const el = $(k);
+    if (el) state[k] = Number(el.value);
   }
   state.material = $('material').querySelector('button.on').dataset.val;
   state.mode = $('mode').querySelector('button.on').dataset.val;
@@ -321,7 +323,7 @@ function syncStateFromDOM() {
 
 function syncDOMFromState() {
   $('number').value = state.number;
-  for (const k of ['relief', 'digitHeight', 'stroke', 'tracking', 'thickness', 'radius', 'padX', 'padY', 'tilt']) {
+  for (const k of ['length', 'relief', 'digitHeight', 'stroke', 'tracking', 'thickness', 'radius', 'padX', 'padY', 'tilt']) {
     const el = $(k);
     if (el) {
       el.value = state[k];
@@ -397,12 +399,14 @@ for (const id of ['mode', 'style', 'mount', 'material', 'layout']) {
   });
 }
 
-for (const k of ['relief', 'digitHeight', 'stroke', 'tracking', 'thickness', 'radius', 'padX', 'padY', 'tilt']) {
+for (const k of ['length', 'relief', 'digitHeight', 'stroke', 'tracking', 'thickness', 'radius', 'padX', 'padY', 'tilt']) {
   const el = $(k);
-  el.addEventListener('input', () => {
-    paintRange(el);
-    rerender();
-  });
+  if (el) {
+    el.addEventListener('input', () => {
+      paintRange(el);
+      rerender();
+    });
+  }
 }
 
 $('profile').addEventListener('change', rerender);

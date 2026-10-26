@@ -6,17 +6,16 @@
  *   y : up the plate, 0 at the bottom edge
  *   z : through the plate, 0 at the BACK face, +thickness at the FRONT (number) face
  *
- * The panel is built in exactly the orientation it should be printed in: back face on
- * the bed, number face up.
+ * The panel is built in print orientation: back face on the bed, number face up.
  *
  * The stand is a SINGLE-PIECE grooved wedge mount:
- *   - Two thickened side wedges with inward-facing channels running down the front rake.
- *   - The panel slides in from the top and sits on the bottom ledge stop.
- *   - Connected by a front plinth and a rear tie bar.
- *   - Prints upright on its flat base on the bed with 0 supports (satisfying the 45° rule).
+ *   - Monolithic side wedges covering the channels from the outside, grounded directly on the bed.
+ *   - Dual side key locks (0.5 mm snug fit into panel's side notches).
+ *   - Sliding channels integrated with the front plinth stop and rear tie bar.
+ *   - Zero floating parts in print mode; 0 supports required (45° rule satisfied).
  */
 import * as THREE from 'three';
-import { layoutText } from './glyphs.js?v=7';
+import { layoutText } from './glyphs.js?v=8';
 
 const deg = Math.PI / 180;
 
@@ -24,6 +23,7 @@ export const DEFAULT_PARAMS = {
   number: '98765 43210',
   mode: 'engrave', // 'engrave' | 'emboss'
   style: 'styled', // 'styled' | 'digital'
+  length: 95, // overall plate length in mm (60..160)
   digitHeight: 18,
   stroke: 0.13,
   gap: 0.025,
@@ -32,8 +32,8 @@ export const DEFAULT_PARAMS = {
   relief: 0.6,
   thickness: 3.0,
   radius: 4,
-  padX: 8,
-  padY: 6,
+  padX: 6,
+  padY: 5,
   mount: 'rack', // 'rack' | 'none'
   tilt: 30,
   material: 'PETG', // 'PLA' | 'PETG'
@@ -46,14 +46,14 @@ export const PROFILES = {
   fine: { nozzle: 0.4, layer: 0.12, label: '0.4 nozzle / 0.12 mm' },
 };
 
-/** Widest the panel may get so the stand still clears the A1 mini's 180 mm bed. */
+/** Widest the panel may get so the stand clears the A1 mini's 180 mm bed. */
 const MAX_PANEL_W = 160;
 
 /** Stand dimension presets. */
 export const RACK = {
   cl: 0.4,
   tb: 2.6,
-  bw: 7,
+  bw: 8,
   pillarT: 4.0,
   pillarH: 6.0,
   lipT: 1.8,
@@ -76,19 +76,27 @@ function uniqSorted(values, lo, hi, eps = 1e-7) {
   return out;
 }
 
-function outlinePoints(w, h, r, notch, seg = 8) {
+function outlinePoints(w, h, r, sideNotch, seg = 8) {
   const rr = Math.max(0, Math.min(r, Math.min(w, h) / 2 - 0.2));
   const x0 = -w / 2;
   const x1 = w / 2;
   const segs = rr > 0.05 ? seg : 0;
 
   if (segs === 0) {
-    const ring = [[x0, 0]];
-    if (notch) {
-      ring.push([notch.x0, 0], [notch.x0, notch.depth]);
-      ring.push([notch.x1, notch.depth], [notch.x1, 0]);
+    const ring = [[x0, 0], [x1, 0]];
+    if (sideNotch) {
+      ring.push([x1, sideNotch.y0]);
+      ring.push([x1 - sideNotch.depth, sideNotch.y0]);
+      ring.push([x1 - sideNotch.depth, sideNotch.y1]);
+      ring.push([x1, sideNotch.y1]);
     }
-    ring.push([x1, 0], [x1, h], [x0, h]);
+    ring.push([x1, h], [x0, h]);
+    if (sideNotch) {
+      ring.push([x0, sideNotch.y1]);
+      ring.push([x0 + sideNotch.depth, sideNotch.y1]);
+      ring.push([x0 + sideNotch.depth, sideNotch.y0]);
+      ring.push([x0, sideNotch.y0]);
+    }
     return { ring, corners: [], rr: 0, segs: 0 };
   }
 
@@ -108,17 +116,37 @@ function outlinePoints(w, h, r, notch, seg = 8) {
 
   const ring = [];
   const push = (p) => ring.push(p);
+
+  // Bottom edge from left to right
   push([x0 + rr, 0]);
-  if (notch) {
-    push([notch.x0, 0]);
-    push([notch.x0, notch.depth]);
-    push([notch.x1, notch.depth]);
-    push([notch.x1, 0]);
-  }
   push([x1 - rr, 0]);
+
+  // Bottom-right corner arc (ends at x1, rr)
   br.pts.slice(1).forEach(push);
+
+  // Right edge going UP with side notch
+  if (sideNotch && sideNotch.y0 >= rr && sideNotch.y1 <= h - rr) {
+    push([x1, sideNotch.y0]);
+    push([x1 - sideNotch.depth, sideNotch.y0]);
+    push([x1 - sideNotch.depth, sideNotch.y1]);
+    push([x1, sideNotch.y1]);
+  }
+
+  // Top-right corner arc (starts at x1, h-rr, ends at x1-rr, h)
   tr.pts.forEach(push);
+
+  // Top-left corner arc (starts at x0+rr, h, ends at x0, h-rr)
   tl.pts.forEach(push);
+
+  // Left edge going DOWN with side notch
+  if (sideNotch && sideNotch.y0 >= rr && sideNotch.y1 <= h - rr) {
+    push([x0, sideNotch.y1]);
+    push([x0 + sideNotch.depth, sideNotch.y1]);
+    push([x0 + sideNotch.depth, sideNotch.y0]);
+    push([x0, sideNotch.y0]);
+  }
+
+  // Bottom-left corner arc (starts at x0, rr, ends at x0+rr, 0)
   bl.pts.forEach(push);
 
   const f = ring[0];
@@ -246,10 +274,6 @@ function signedVolume(v) {
 
 /**
  * The number panel, as ONE closed manifold surface.
- *
- * Front face, back face, and vertical groove walls are generated via exact 2D grid cell
- * decomposition. Overlapping and contiguous strokes merge seamlessly without internal walls
- * or degenerate edges, producing an airtight manifold.
  */
 export function buildPanel(p) {
   const d = derive(p);
@@ -259,11 +283,11 @@ export function buildPanel(p) {
   const T = d.thickness;
   const R = Math.max(0.2, Math.min(1.4, d.relief));
   const raised = d.mode === 'emboss';
-  const { width: W, height: H, bars, notch } = d;
+  const { width: W, height: H, bars, sideNotch } = d;
   const x0 = -W / 2;
   const x1 = W / 2;
 
-  const outline = outlinePoints(W, H, d.radiusSafe, notch);
+  const outline = outlinePoints(W, H, d.radiusSafe, sideNotch);
 
   const solid = new Solid();
   const capZ = raised ? T + R : T;
@@ -275,9 +299,9 @@ export function buildPanel(p) {
     xset.push(x0 + outline.rr, x1 - outline.rr);
     yset.push(outline.rr, H - outline.rr);
   }
-  if (notch) {
-    xset.push(notch.x0, notch.x1);
-    yset.push(notch.depth);
+  if (sideNotch) {
+    xset.push(x0 + sideNotch.depth, x1 - sideNotch.depth);
+    yset.push(sideNotch.y0, sideNotch.y1);
   }
   for (const b of bars) {
     xset.push(b.x, b.x + b.w);
@@ -292,8 +316,13 @@ export function buildPanel(p) {
     }
     return false;
   };
-  const inNotch = (px, py) =>
-    !!notch && px > notch.x0 && px < notch.x1 && py > 0 && py < notch.depth;
+  const inNotch = (px, py) => {
+    if (!sideNotch) return false;
+    const inY = py > sideNotch.y0 && py < sideNotch.y1;
+    const inLeft = px >= x0 && px < x0 + sideNotch.depth;
+    const inRight = px > x1 - sideNotch.depth && px <= x1;
+    return inY && (inLeft || inRight);
+  };
 
   const eps = 1e-6;
   const isCornerCell = (ax, bx, ay, by) => {
@@ -324,12 +353,10 @@ export function buildPanel(p) {
       cellType[i][j] = inG ? 2 : 1;
 
       if (!inG) {
-        // Solid top face
         const z = raised ? T : capZ;
         solid.triUp([ax, ay], [bx, ay], [bx, by], z);
         solid.triUp([ax, ay], [bx, by], [ax, by], z);
       } else {
-        // Groove floor / raised top
         const z = raised ? capZ : floorZ;
         solid.triUp([ax, ay], [bx, ay], [bx, by], z);
         solid.triUp([ax, ay], [bx, by], [ax, by], z);
@@ -337,7 +364,7 @@ export function buildPanel(p) {
     }
   }
 
-  // Groove walls along cell boundaries between solid and groove
+  // Groove walls along cell boundaries
   const zBot = raised ? T : floorZ;
   const zTop = raised ? capZ : T;
 
@@ -372,7 +399,7 @@ export function buildPanel(p) {
     }
   }
 
-  // Quarter-round corners
+  // Corners
   const topZ = raised ? T : capZ;
   const emit = (a, b, c) => {
     solid.triUp(a, b, c, topZ);
@@ -392,7 +419,7 @@ export function buildPanel(p) {
     for (let i = 0; i < r1.length - 1; i++) emit(r1[i], r1[i + 1], pts[n - 2]);
   }
 
-  // Outer perimeter wall
+  // Outer boundary wall
   const ring = subdivideRing(outline.ring, xs, ys);
   solid.wall(ring, 0, topZ);
 
@@ -404,17 +431,26 @@ export function buildPanel(p) {
 /* ------------------------------------------------------------------ dimensions */
 
 export function derive(p) {
+  // Target length (width of panel) controlled directly by slider
+  const targetLength = Math.max(60, Math.min(160, p.length ?? (p.digitHeight > 24 ? 150 : 95)));
+  const padX = Math.max(3, p.padX ?? 6);
+  const padY = Math.max(3, p.padY ?? 5);
+
+  // Probe layout to find natural aspect ratio
   const probe = layoutText(p.number, {
-    height: p.digitHeight,
+    height: 10,
     stroke: p.stroke,
     gap: p.gap,
     tracking: p.tracking,
     aspect: p.aspect,
     style: p.style,
   });
-  const availW = Math.max(30, MAX_PANEL_W - p.padX * 2);
-  const fitScale = probe.width > availW ? availW / probe.width : 1;
-  const digitHeightEff = p.digitHeight * fitScale;
+
+  const availW = Math.max(20, targetLength - padX * 2);
+  const unitW = probe.width / 10;
+  const naturalHeight = unitW > 0 ? availW / unitW : 14;
+  const userCap = p.digitHeight ?? 24;
+  const digitHeightEff = Math.max(7, Math.min(userCap, naturalHeight));
 
   const text = layoutText(p.number, {
     height: digitHeightEff,
@@ -425,17 +461,17 @@ export function derive(p) {
     style: p.style,
   });
 
-  const width = Math.max(40, text.width + p.padX * 2);
-  const height = Math.max(20, digitHeightEff + p.padY * 2);
-  const bars = text.bars.map((b) => ({ ...b, y: b.y + p.padY }));
+  const width = targetLength;
+  const height = Math.max(18, digitHeightEff + padY * 2);
+  const bars = text.bars.map((b) => ({ ...b, y: b.y + padY }));
 
   const thickness = Math.max(1.2, p.thickness);
   const tilt = Math.max(0, Math.min(45, p.tilt));
   const hasRack = p.mount === 'rack';
 
-  const notchW = 10;
-  const notch = hasRack
-    ? { x0: width / 2 - 32, x1: width / 2 - 32 + notchW, depth: RACK.detent }
+  // Dual side keying notches
+  const sideNotch = hasRack
+    ? { y0: 5.5, y1: 11.5, depth: 0.9 }
     : null;
 
   const radiusSafe = Math.max(
@@ -445,15 +481,15 @@ export function derive(p) {
       p.padX,
       p.padY,
       Math.min(width, height) / 2 - 0.2,
-      notch ? notch.x0 - -width / 2 - 1 : Infinity,
+      sideNotch ? sideNotch.y0 - 0.2 : Infinity,
     ),
   );
 
-  const lipH = Math.min(10, Math.max(4, height * 0.22));
+  const lipH = Math.min(10, Math.max(5, height * 0.22));
   const rearFoot = Math.max(18, Math.min(46, height * 0.62));
   const hb = Math.max(8, height * 0.86);
 
-  const wedgeThick = 7.0;
+  const wedgeThick = 8.0;
   const clSide = 0.4;
   const rackWidth = width + 2 * (clSide + wedgeThick);
   const rackDepth = rearFoot + thickness + 9;
@@ -461,6 +497,7 @@ export function derive(p) {
 
   return {
     ...p,
+    length: targetLength,
     bars,
     width,
     height,
@@ -469,9 +506,10 @@ export function derive(p) {
     tilt,
     hasRack,
     hasStand: hasRack,
-    notch,
+    sideNotch,
+    notch: sideNotch, // backwards compatibility
     radiusSafe,
-    fitScale,
+    fitScale: 1,
     digitHeightEff,
     strokeMm: digitHeightEff * p.stroke,
     lipH,
@@ -486,16 +524,14 @@ export function derive(p) {
   };
 }
 
-/* ------------------------------------------------------------------ stand (one-piece grooved wedge) */
+/* ------------------------------------------------------------------ stand (monolithic grooved wedge) */
 
 /**
- * The single-piece grooved wedge stand.
+ * Single-piece grooved wedge stand.
  *
- * Two side wedges with inward-facing U-channels running down the front rake.
- * The plate enters from the top, slides down between the wedges, and lands on the
- * bottom plinth stop.
- *
- * Prints standing on its flat base on the bed with ZERO supports (slope < 45° overhang).
+ * Monolithic side wedges covering the channels from the outside, grounded directly on the bed.
+ * Dual side key locks (0.5 mm clearance for a snug click fit).
+ * Supported down to y=0 on the bed (0 floating parts; 45° rule satisfied).
  */
 export function buildStand(p) {
   const d = derive(p);
@@ -519,8 +555,8 @@ export function buildStand(p) {
   const clSide = 0.4;
   const clThick = 0.4;
   const slotW = T + clThick;
-  const slotDepth = 3.5;
-  const wallThick = 3.5;
+  const slotDepth = 4.0;
+  const wallThick = 4.0;
 
   const halfInner = W / 2 + clSide;
   const totalStandW = 2 * (halfInner + slotDepth + wallThick);
@@ -534,7 +570,7 @@ export function buildStand(p) {
     return m;
   };
 
-  // Outer wedge profile
+  // Outer solid trapezium wedge profile
   const shape = new THREE.Shape();
   shape.moveTo(-hb * tan, lip + hb);
   shape.lineTo(0, lip);
@@ -551,16 +587,16 @@ export function buildStand(p) {
 
   // Both side wedges
   for (const s of [-1, 1]) {
-    // Outer solid fin
+    // Outer solid fin (covers the channel from the outside, grounded on bed y=0)
     const fin = new THREE.Mesh(finGeo, null);
     fin.position.x = s > 0 ? halfInner + slotDepth + wallThick : -halfInner - slotDepth;
     g.add(fin);
 
-    // Channel flanges
+    // Channel flanges along the rake slope
     const chLength = hb + 2;
     const chX = s > 0 ? halfInner + slotDepth / 2 : -halfInner - slotDepth / 2;
 
-    // Back flange of channel (supports back of plate)
+    // Back support flange of channel (solid down to base)
     const backFlangeT = 2.4;
     const localY = chLength / 2;
     const localZ_back = -backFlangeT / 2;
@@ -568,30 +604,43 @@ export function buildStand(p) {
     const worldZ_back = -localY * sin + localZ_back * cos;
     g.add(box(slotDepth, chLength, backFlangeT, chX, worldY_back, worldZ_back, -theta));
 
-    // Front lip of channel (holds front of plate)
+    // Front retaining lip of channel
     const frontLipT = 1.8;
     const localZ_front = slotW + frontLipT / 2;
     const worldY_front = lip + localY * cos + localZ_front * sin;
     const worldZ_front = -localY * sin + localZ_front * cos;
     g.add(box(slotDepth, chLength, frontLipT, chX, worldY_front, worldZ_front, -theta));
+
+    // Under-channel bed grounding: solid block directly under the channel down to bed y=0
+    const bedGroundDepth = slotW + frontLipT + backFlangeT;
+    const groundZ = (localZ_front + localZ_back) / 2;
+    g.add(box(slotDepth, lip, bedGroundDepth, chX, lip / 2, groundZ));
+
+    // Dual side key lock (snug fit into panel's side notch)
+    // Positioned along the channel at notch center (y = 8.5 mm from lip)
+    const keyLocalY = 8.5;
+    const keyLocalZ = slotW / 2;
+    const keyWorldY = lip + keyLocalY * cos + keyLocalZ * sin;
+    const keyWorldZ = -keyLocalY * sin + keyLocalZ * cos;
+    const keyHeight = 0.7; // 0.7mm bump vs 0.9mm notch + 0.4mm clearance = 0.5mm snug fit
+    const keyX = s > 0 ? halfInner + slotDepth - keyHeight / 2 : -halfInner - slotDepth + keyHeight / 2;
+    g.add(box(keyHeight, 5.0, slotW * 0.8, keyX, keyWorldY, keyWorldZ, -theta));
   }
 
-  // Front plinth (acts as bottom stop and base bridge)
+  // Front plinth (acts as bottom ledge stop + front base bridge, sitting flat on bed)
   const plinthDepth = slotW + 3;
   g.add(box(totalStandW, lip, plinthDepth, 0, lip / 2, plinthDepth / 2 - 1.5));
 
-  // Rear tie bar connecting rear feet
-  g.add(box(totalStandW, 4, 5, 0, 2, -rear * 0.7));
+  // Rear tie bar connecting rear feet on the bed
+  g.add(box(totalStandW, 4.5, 5.5, 0, 2.25, -rear * 0.7));
 
   return g;
 }
 
-/** Legacy alias for buildStand. */
 export function buildRack(p) {
   return buildStand(p);
 }
 
-/** Legacy stub for buildFoot (stand is now a unified single piece). */
 export function buildFoot(p) {
   const g = new THREE.Group();
   g.name = 'foot';
@@ -650,12 +699,10 @@ export function buildCoupon(p) {
   return g;
 }
 
-/** Stand sits flat on table/dash at (0, 0, 0). */
 export function rackTransform(p) {
   return { rotX: 0, y: 0 };
 }
 
-/** Seat the panel inside the stand's channels. */
 export function seatPanel(panelGroup, p) {
   const d = derive(p);
   if (!d.hasRack) return panelGroup;

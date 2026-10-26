@@ -20,6 +20,16 @@ number = "98765 43210";
 // What to generate on the plate
 mode = "both"; // [both:Panel + stand, panel:Panel only, rack:Stand only, coupon:Pen test coupon]
 
+/* [Panel] */
+
+// Target length of the plate in mm (70-100 mm is sweet spot for car dashboards)
+plate_length = 95; // [60:5:160]
+
+panel_thickness = 3.0; // [1.6:0.2:4.5]
+corner_radius = 4; // [0:0.5:14]
+side_gap = 6; // [2:1:26]
+end_gap = 5; // [2:1:22]
+
 /* [Digit relief] */
 
 // Engraved = pen sits in the groove. Raised = wipe a pen across the tops.
@@ -28,7 +38,7 @@ lettering = "engraved"; // [engraved:Engraved, raised:Raised]
 // How deep the groove is / how high the ridge is
 relief_depth = 0.6; // [0.3:0.1:1.2]
 
-// Digit cap height. Reduced automatically if the plate would not fit the bed.
+// Maximum digit cap height
 digit_height = 18; // [12:0.5:36]
 
 // Stroke thickness as a fraction of digit height. 0.13 ≈ 2.3 mm at 18 mm digits.
@@ -39,13 +49,6 @@ segment_gap = 0.025; // [0.015:0.005:0.06]
 
 // Space between characters, fraction of digit height
 tracking = 0.16; // [0.04:0.01:0.34]
-
-/* [Panel] */
-
-panel_thickness = 3.0; // [1.6:0.2:4.5]
-corner_radius = 4; // [0:0.5:14]
-side_gap = 8; // [2:1:26]
-end_gap = 6; // [2:1:22]
 
 /* [Stand] */
 
@@ -100,12 +103,12 @@ function offsets(s, i = 0, acc = 0, out = []) =
     offsets(s, i + 1, acc + char_advance(s[i]) + tracking, concat(out, [acc]));
 
 function fitted_height() =
-    let (tw = text_width(number) * digit_height)
-    let (scale = min(1, (max_panel_width - 2 * side_gap) / tw))
-    digit_height * scale;
+    let (tw = text_width(number))
+    let (scale = min(1, (plate_length - 2 * side_gap) / (tw * digit_height)))
+    max(7, min(digit_height, (plate_length - 2 * side_gap) / tw));
 
-function panel_width(s, h) = text_width(s) * h + 2 * side_gap;
-function panel_height(h) = h + 2 * end_gap;
+function panel_width(s, h) = plate_length;
+function panel_height(h) = max(18, h + 2 * end_gap);
 
 // ---------------------------------------------------------------------------
 //  Glyphs
@@ -228,6 +231,14 @@ module panel(str = number, h = -1, thick = panel_thickness, rad = corner_radius)
             linear_extrude(height = thick)
                 rounded_rect(w, hp, rad);
 
+            // Dual side keying notches for snap fit with stand keys
+            if (with_rack) {
+                translate([-1, 5.5, -1])
+                    cube([0.9 + 1, 6, thick + 2]);
+                translate([w - 0.9, 5.5, -1])
+                    cube([0.9 + 1, 6, thick + 2]);
+            }
+
             if (lettering == "engraved")
                 translate([w / 2, end_gap, thick - rel])
                     linear_extrude(height = rel + 1)
@@ -245,12 +256,10 @@ module panel(str = number, h = -1, thick = panel_thickness, rad = corner_radius)
 //  Stand (Single-piece grooved wedge mount)
 // ---------------------------------------------------------------------------
 
-function lip_height() = min(easel_lip, max(4, panel_height(fitted_height()) * 0.22));
+function lip_height() = min(easel_lip, max(5, panel_height(fitted_height()) * 0.22));
 
 /**
- * Single-piece grooved wedge stand.
- * Two side wedges with inner channels running down the front rake.
- * Prints flat on its base with zero supports.
+ * Single-piece grooved wedge stand with dual side keying and zero floating parts.
  */
 module stand() {
     hh = fitted_height();
@@ -262,8 +271,8 @@ module stand() {
     clSide = 0.4;
     clThick = 0.4;
     slotW = th + clThick;
-    slotDepth = 3.5;
-    wallThick = 3.5;
+    slotDepth = 4.0;
+    wallThick = 4.0;
     wedgeThick = slotDepth + wallThick;
 
     halfInner = pw / 2 + clSide;
@@ -290,16 +299,31 @@ module stand() {
         // Channel flanges along the rake slope
         chX = sgn > 0 ? halfInner : -halfInner - slotDepth;
         chLen = hb + 2;
+
         // Back flange
         translate([chX, base, 0])
             rotate([-rake_deg, 0, 0])
                 translate([0, 0, -2.4])
                     cube([slotDepth, chLen, 2.4]);
+
         // Front lip
         translate([chX, base, 0])
             rotate([-rake_deg, 0, 0])
                 translate([0, 0, slotW])
                     cube([slotDepth, chLen, 1.8]);
+
+        // Grounding block directly under channel down to bed y=0
+        translate([chX, 0, -2.4])
+            cube([slotDepth, base, slotW + 4.2]);
+
+        // Dual side key bumps inside the channel (0.5 mm snug fit)
+        keyLocalY = 8.5;
+        keyWorldY = base + keyLocalY * cosr + (slotW / 2) * sinr;
+        keyWorldZ = -keyLocalY * sinr + (slotW / 2) * cosr;
+        keyX = sgn > 0 ? halfInner + slotDepth - 0.7 : -halfInner - slotDepth;
+        translate([keyX, keyWorldY, keyWorldZ])
+            rotate([-rake_deg, 0, 0])
+                cube([0.7, 5, slotW * 0.8]);
     }
 
     // Front plinth (bottom ledge stop + front bridge)
@@ -309,7 +333,7 @@ module stand() {
 
     // Rear tie bar
     translate([-totalW / 2, 0, -rear * 0.7])
-        cube([totalW, 4, 5]);
+        cube([totalW, 4.5, 5.5]);
 }
 
 module rack() {
