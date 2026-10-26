@@ -10,7 +10,7 @@ import {
   buildInk,
   seatPanel,
   fits,
-} from './model.js?v=6';
+} from './model.js?v=7';
 import {
   collectTriangles,
   meshVolume,
@@ -19,9 +19,9 @@ import {
   buildSTL,
   download,
   packSideBySide,
-} from './stl.js?v=6';
-import { createViewer } from './viewer.js?v=6';
-import { sanitize } from './glyphs.js?v=6';
+} from './stl.js?v=7';
+import { createViewer } from './viewer.js?v=7';
+import { sanitize } from './glyphs.js?v=7';
 
 const DENSITY = { PLA: 1.24, PETG: 1.27 }; // g/cm^3
 const $ = (id) => document.getElementById(id);
@@ -46,9 +46,6 @@ function fmtTime(seconds) {
 
 /**
  * Rough slicer-time model, in seconds.
- *
- * Takes the already-shelled extrusion volume — a 3 mm plate is nearly all walls and
- * skins, so the plastic actually laid down is well below the solid volume.
  */
 function estimateTime(extrudedMm3, profileKey, ironing) {
   const { nozzle, layer } = PROFILES[profileKey];
@@ -69,39 +66,31 @@ function buildDisplayObjects() {
   const panel = buildPanel(state);
   if (state.showInk) panel.add(buildInk(state));
   const rack = buildRack(state);
-  const base = buildFoot(state);
   const d = derive(state);
-  return { panel, rack, base, d };
+  return { panel, rack, d };
 }
 
 function renderScene() {
-  const { panel, rack, base, d } = buildDisplayObjects();
+  const { panel, rack, d } = buildDisplayObjects();
   viewer.clear();
 
   if (state.layout === 'assembled') {
+    if (d.hasRack) viewer.add(rack);
     seatPanel(panel, state);
-    const t = rackTransform(state);
-    rack.rotation.x = t.rotX;
-    rack.position.set(0, t.y, 0);
-    viewer.add(rack);
-    viewer.add(base);
     viewer.add(panel);
     return;
   }
 
-  // "As printed": rack lying on its back plate, panel flat beside it.
+  // "As printed": stand sits upright on its base on the bed, panel flat beside it.
   const standW = d.hasRack ? d.rackWidth : 0;
   const gap = 14;
   const totalW = standW + (d.hasRack ? gap : 0) + d.width;
   let x = -totalW / 2;
 
   if (d.hasRack) {
-    // the rack is authored in its print orientation already
-    rack.rotation.x = -Math.PI / 2;
+    // Stand prints sitting on its flat base on the bed
     rack.position.set(x + standW / 2, 0, 0);
     viewer.add(rack);
-    base.position.set(x + standW / 2, 0, 0);
-    viewer.add(base);
     x += standW + gap;
   }
   panel.rotation.x = -Math.PI / 2;
@@ -115,7 +104,6 @@ function updateStats() {
   const d = derive(state);
   const panel = buildPanel(state);
   const rack = buildRack(state);
-  const base = buildFoot(state);
 
   const pVol = meshVolume(collectTriangles(panel));
   const sVol = d.hasRack ? meshVolume(collectTriangles(rack)) : 0;
@@ -126,9 +114,9 @@ function updateStats() {
   const ironing = state.mode === 'engrave';
 
   $('mSize').textContent = `${num(d.width)} × ${num(d.height)} × ${num(d.thickness)}`;
-  $('mMass').textContent = `≈ ${panelG.toFixed(1)} g`;
+  $('mMass').textContent = `≈ ${(panelG + (d.hasRack ? standG : 0)).toFixed(1)} g`;
   $('mMass').title = d.hasRack
-    ? `panel ≈${panelG.toFixed(1)} g + easel ≈${standG.toFixed(1)} g`
+    ? `panel ≈${panelG.toFixed(1)} g + stand ≈${standG.toFixed(1)} g`
     : 'panel only';
   $('mTime').textContent = fmtTime(
     estimateTime(pVol * SHELL.panel, state.profile, ironing) +
@@ -146,7 +134,7 @@ function updateStats() {
   const warnings = [];
   if (!f.ok) {
     warnings.push(
-      `Panel is ${num(f.stripW)} mm wide — over the A1 mini's 180 mm bed. Cut the digit height, the side gap, or the spacing.`,
+      `Job is too wide for the A1 mini's 180 mm bed. Cut the digit height, side gap or spacing.`,
     );
   }
   if (d.strokeMm < 1.2) {
@@ -244,23 +232,15 @@ function exportOne(which) {
     return;
   }
 
-  if (which === 'rack') {
+  if (which === 'rack' || which === 'base') {
     if (!d.hasRack) {
-      flash('no easel with these settings');
+      flash('no stand with these settings');
       return;
     }
     const g = buildRack(state);
     const tris = toPrintSpace(collectTriangles(g), 'upright');
-    download(buildSTL(tris, 'easel'), 'easel.stl');
-    flash('easel exported');
-    return;
-  }
-
-  if (which === 'base') {
-    const g = buildFoot(state);
-    const tris = toPrintSpace(collectTriangles(g), 'upright');
-    download(buildSTL(tris, 'base'), 'base.stl');
-    flash('base exported');
+    download(buildSTL(tris, 'stand'), `stand-${slug}.stl`);
+    flash('stand exported');
     return;
   }
 
@@ -313,183 +293,140 @@ const RANGES = {
 function paintRange(el) {
   const min = Number(el.min);
   const max = Number(el.max);
-  const v = Number(el.value);
-  const pct = ((v - min) / (max - min)) * 100;
-  el.style.setProperty('--pct', `${pct}%`);
+  const val = Number(el.value);
+  const pct = ((val - min) / (max - min)) * 100;
+  el.style.background = `linear-gradient(to right, var(--accent) 0%, var(--accent) ${pct}%, var(--panel-2) ${pct}%, var(--panel-2) 100%)`;
 }
 
-function syncOutputs() {
-  const d = derive(state);
-  for (const [key, fn] of Object.entries(RANGES)) {
-    const el = $(key);
+function updateOutputs(d) {
+  for (const [key, fmt] of Object.entries(RANGES)) {
     const out = $(`${key}Out`);
-    if (el) paintRange(el);
-    if (out) out.textContent = fn(Number(el?.value ?? state[key]), d);
+    if (out) out.textContent = fmt(state[key], d);
   }
-  // Show the height that will actually be printed — it is capped to fit the bed.
-  const capped = d.fitScale < 0.999;
-  $('digitHeightOut').textContent = capped
-    ? `${state.digitHeight} → ${d.digitHeightEff.toFixed(1)} mm`
-    : `${state.digitHeight} mm`;
-  $('digitHeightOut').style.color = capped ? 'var(--warn)' : '';
-  $('digitHeightOut').title = capped
-    ? 'Reduced automatically so the panel fits the A1 mini bed'
-    : '';
 }
 
-function applyFromUI() {
-  for (const key of Object.keys(RANGES)) {
-    const el = $(key);
-    if (el) state[key] = Number(el.value);
+function syncStateFromDOM() {
+  state.number = sanitize($('number').value) || '98765 43210';
+  for (const k of ['relief', 'digitHeight', 'stroke', 'tracking', 'thickness', 'radius', 'padX', 'padY', 'tilt']) {
+    state[k] = Number($(k).value);
   }
+  state.material = $('material').querySelector('button.on').dataset.val;
+  state.mode = $('mode').querySelector('button.on').dataset.val;
+  state.style = $('style').querySelector('button.on').dataset.val;
+  state.mount = $('mount').querySelector('button.on').dataset.val;
   state.profile = $('profile').value;
+  state.layout = $('layout').querySelector('button.on').dataset.val;
   state.showInk = $('showInk').checked;
-  syncOutputs();
-  renderScene();
-  updateStats();
+}
+
+function syncDOMFromState() {
+  $('number').value = state.number;
+  for (const k of ['relief', 'digitHeight', 'stroke', 'tracking', 'thickness', 'radius', 'padX', 'padY', 'tilt']) {
+    const el = $(k);
+    if (el) {
+      el.value = state[k];
+      paintRange(el);
+    }
+  }
+  setSeg('material', state.material);
+  setSeg('mode', state.mode);
+  setSeg('style', state.style);
+  setSeg('mount', state.mount);
+  setSeg('layout', state.layout);
+  $('profile').value = state.profile;
+  $('showInk').checked = state.showInk;
+}
+
+function setSeg(id, val) {
+  const grp = $(id);
+  if (!grp) return;
+  for (const btn of grp.querySelectorAll('button')) {
+    const on = btn.dataset.val === val;
+    btn.classList.toggle('on', on);
+    btn.setAttribute('aria-checked', String(on));
+  }
+}
+
+function rerender() {
+  syncStateFromDOM();
+  const { d } = updateStats();
+  updateOutputs(d);
   refreshRecipe();
-  persist();
+  renderScene();
+  syncURL();
 }
 
-function bind() {
-  $('number').addEventListener('input', (e) => {
-    const clean = sanitize(e.target.value);
-    if (clean !== e.target.value) e.target.value = clean;
-    state.number = clean;
-    syncOutputs();
-    renderScene();
-    updateStats();
-    persist();
-  });
-
-  for (const key of Object.keys(RANGES)) {
-    const el = $(key);
-    if (!el) continue;
-    el.addEventListener('input', applyFromUI);
+function syncURL() {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(state)) {
+    if (DEFAULT_PARAMS[k] !== undefined && v !== DEFAULT_PARAMS[k]) {
+      p.set(k, String(v));
+    }
   }
+  const qs = p.toString();
+  const url = `${location.pathname}${qs ? `?${qs}` : ''}`;
+  history.replaceState(null, '', url);
+}
 
-  $('profile').addEventListener('change', applyFromUI);
-  $('showInk').addEventListener('change', applyFromUI);
-
-  for (const [id, key] of [
-    ['mode', 'mode'],
-    ['style', 'style'],
-    ['mount', 'mount'],
-    ['material', 'material'],
-  ]) {
-    const grp = $(id);
-    grp.addEventListener('click', (e) => {
-      const btn = e.target.closest('button[data-val]');
-      if (!btn) return;
-      for (const b of grp.querySelectorAll('button')) {
-        const on = b === btn;
-        b.classList.toggle('on', on);
-        b.setAttribute('aria-checked', String(on));
-      }
-      state[key] = btn.dataset.val;
-      if (key === 'mode') {
-        $('reliefHint').textContent =
-          btn.dataset.val === 'engrave'
-            ? 'Rule of thumb: 0.6 mm is two layers at 0.30 mm and three at 0.20 mm — deep enough to hold ink, shallow enough to stay sharp.'
-            : 'Raised digits: lay a chisel-tip pen almost flat and swipe, so only the tops catch the ink. Works, but the edge is less forgiving than a groove.';
-      }
-      applyFromUI();
-    });
+function loadURL() {
+  const p = new URLSearchParams(location.search);
+  for (const [k, v] of p.entries()) {
+    if (DEFAULT_PARAMS[k] === undefined) continue;
+    if (typeof DEFAULT_PARAMS[k] === 'number') state[k] = Number(v);
+    else state[k] = v;
   }
+  if (state.stand !== undefined && state.mount === undefined) {
+    state.mount = state.stand === 'none' ? 'none' : 'rack';
+  }
+}
 
-  const layout = $('layout');
-  layout.addEventListener('click', (e) => {
-    const btn = e.target.closest('button[data-val]');
+/* ------------------------------------------------------------------ listeners */
+
+$('number').addEventListener('input', (e) => {
+  const clean = sanitize(e.target.value);
+  if (clean !== e.target.value) e.target.value = clean;
+  rerender();
+});
+
+for (const id of ['mode', 'style', 'mount', 'material', 'layout']) {
+  $(id).addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
     if (!btn) return;
-    for (const b of layout.querySelectorAll('button')) {
-      const on = b === btn;
-      b.classList.toggle('on', on);
-      b.setAttribute('aria-checked', String(on));
-    }
-    state.layout = btn.dataset.val;
-    renderScene();
-    viewer.frame();
-    persist();
-  });
-
-  $('reframe').addEventListener('click', () => viewer.frame());
-
-  $('dlPanel').addEventListener('click', () => exportOne('panel'));
-  $('dlRack').addEventListener('click', () => exportOne('rack'));
-  $('dlBase').addEventListener('click', () => exportOne('base'));
-  $('dlBoth').addEventListener('click', () => exportOne('both'));
-  $('dlCoupon').addEventListener('click', () => exportOne('coupon'));
-
-  $('copyRecipe').addEventListener('click', async () => {
-    try {
-      await navigator.clipboard.writeText(recipeText());
-      flash('settings copied');
-    } catch {
-      flash('copy blocked by the browser');
-    }
+    setSeg(id, btn.dataset.val);
+    rerender();
   });
 }
 
-/* ------------------------------------------------------------------ persist */
-
-let persistTimer;
-function persist() {
-  clearTimeout(persistTimer);
-  persistTimer = setTimeout(() => {
-    const slim = { ...state };
-    delete slim.layout;
-    delete slim.showInk;
-    history.replaceState(null, '', `#${encodeURIComponent(JSON.stringify(slim))}`);
-  }, 350);
+for (const k of ['relief', 'digitHeight', 'stroke', 'tracking', 'thickness', 'radius', 'padX', 'padY', 'tilt']) {
+  const el = $(k);
+  el.addEventListener('input', () => {
+    paintRange(el);
+    rerender();
+  });
 }
 
-function restore() {
-  const raw = location.hash.slice(1);
-  if (!raw) return;
+$('profile').addEventListener('change', rerender);
+$('showInk').addEventListener('change', rerender);
+
+$('reframe').addEventListener('click', () => viewer.resetCamera());
+
+$('dlPanel').addEventListener('click', () => exportOne('panel'));
+$('dlRack').addEventListener('click', () => exportOne('rack'));
+if ($('dlBase')) $('dlBase').addEventListener('click', () => exportOne('rack'));
+$('dlBoth').addEventListener('click', () => exportOne('both'));
+$('dlCoupon').addEventListener('click', () => exportOne('coupon'));
+
+$('copyRecipe').addEventListener('click', async () => {
   try {
-    const parsed = JSON.parse(decodeURIComponent(raw));
-    Object.assign(state, parsed);
-    for (const key of Object.keys(RANGES)) {
-      const el = $(key);
-      if (el && state[key] !== undefined) el.value = String(state[key]);
-    }
-    $('profile').value = state.profile;
-    $('number').value = state.number;
-    for (const [id, key] of [
-      ['mode', 'mode'],
-      ['style', 'style'],
-      ['mount', 'mount'],
-      ['material', 'material'],
-    ]) {
-      for (const b of $(id).querySelectorAll('button')) {
-        const on = b.dataset.val === state[key];
-        b.classList.toggle('on', on);
-        b.setAttribute('aria-checked', String(on));
-      }
-    }
+    await navigator.clipboard.writeText(recipeText());
+    flash('settings copied to clipboard');
   } catch {
-    /* corrupt hash, ignore */
+    flash('copy failed — select manually');
   }
-}
+});
 
 /* ------------------------------------------------------------------ boot */
 
-restore();
-bind();
-syncOutputs();
-renderScene();
-updateStats();
-refreshRecipe();
-viewer.frame();
-
-
-
-
-
-
-
-
-
-
-
-
+loadURL();
+syncDOMFromState();
+rerender();

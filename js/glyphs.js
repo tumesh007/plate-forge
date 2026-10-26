@@ -1,21 +1,24 @@
 /**
- * Segment glyphs for parking plates.
+ * Segment and typographic glyphs for parking plates.
  *
  * Everything is defined in a "unit box": height = 1, y from 0 (baseline) to 1 (cap).
  *
- * The 7-segment skeleton is deliberate. Uniform, thick, axis-aligned bars are the
- * easiest possible shape to fill with a permanent marker or a paint pen, and because
- * every wall is vertical the outline is exactly as crisp as the model — no layer
- * stair-stepping anywhere in the groove.
+ * In "styled" mode:
+ *   - Continuous, solid, clean strokes: adjacent bars connect seamlessly without gaps.
+ *   - "1": solid vertical stem, top hook with downward barb, solid base serif.
+ *   - "4": full-height right stem, horizontal crossbar crossing through, upper left arm.
+ *          Open top and bottom (never looks like a 9).
+ *   - "7": top bar, top-left downward hook, stepped diagonal stem down to lower-center,
+ *          and an Indian/European middle crossbar distinguishing it unmistakably from 1.
+ *   - All other digits: solid contiguous strokes without awkward LCD cracks.
  *
- * Every segment is separated from its neighbours by a real gap. That is not just
- * cosmetic: two bars that touch, share an edge, or overlap at a single corner produce
- * a self-intersecting sketch, and the triangulator will quietly drop boundary edges.
+ * In "digital" mode:
+ *   - Traditional 7-segment layout with intentional uniform gaps.
  */
 
 /** Default stroke thickness as a fraction of cap height. */
 export const STROKE = 0.13;
-/** Default gap between segments, as a fraction of cap height. */
+/** Default gap between segments, as a fraction of cap height (digital mode). */
 export const GAP = 0.025;
 
 const DIGITS = {
@@ -31,22 +34,12 @@ const DIGITS = {
   9: 'ABCDFG',
 };
 
-/** Characters that get a narrow cell and a centred single column. */
+/** Characters that get a narrow cell. */
 const NARROW = new Set(['1']);
 const SPACE_ADVANCE = 0.34;
 
 /**
- * Digit geometry.
- *
- * The top and bottom bars run the full cell width. The middle bar is inset from both
- * edges, which lets the left and right verticals merge into ONE continuous stroke when
- * both halves of a side are lit — exactly what a real LCD does. A split vertical is the
- * difference between a readable 7, 1 and 4 and three floating dashes.
- *
- * Nothing here touches or overlaps: every pair is separated by exactly `gap`.
- *
- * Bar rectangles for one digit are built in cap-height units: y spans 0..1, x spans
- * 0..cell.
+ * Classical 7-segment digit geometry with gaps between segments.
  */
 function digitBars(segs, s, gap, cell) {
   const top = 1 - s;
@@ -58,8 +51,6 @@ function digitBars(segs, s, gap, cell) {
   if (has('D')) bars.push([0, 0, cell, s]);
   if (has('G')) bars.push([s + gap, mid, cell - s - gap, mid + s]);
 
-  // A merged vertical can run from s + gap to 1 - s - gap: the inset middle bar
-  // leaves nothing for it to collide with.
   const side = (upper, lower, x0, x1) => {
     if (upper && lower) bars.push([x0, s + gap, x1, top - gap]);
     else if (upper) bars.push([x0, mid + s + gap, x1, top - gap]);
@@ -73,42 +64,93 @@ function digitBars(segs, s, gap, cell) {
 }
 
 /**
- * Styled variant: same rectilinear language, but the two digits that read badly as
- * bare segments get their conventional furniture.
- *
- *   "1"  a flag off the top-left of the stem and a full-width base serif, so it reads
- *        as a one rather than as a bar.
- *   "4"  the top bar is added, which closes the counter — the enclosed space is what
- *        the eye uses to identify a four.
- *
- * Still no diagonals, so the front face stays an exact rectilinear grid.
+ * Continuous merged digit geometry: touching segments overlap slightly so
+ * the mesh builder produces a seamless, solid engraved or embossed cavity.
+ */
+function digitBarsMerged(segs, s, cell) {
+  const top = 1 - s;
+  const mid = 0.5 - s / 2;
+  const has = (k) => segs.includes(k);
+  const bars = [];
+  const ov = 0.005;
+
+  if (has('A')) bars.push([0, top - ov, cell, 1]);
+  if (has('D')) bars.push([0, 0, cell, s + ov]);
+  if (has('G')) bars.push([0, mid - ov, cell, mid + s + ov]);
+
+  // Full or half verticals running into the horizontals
+  if (has('F') && has('E')) bars.push([0, 0, s, 1]);
+  else if (has('F')) bars.push([0, mid, s, 1]);
+  else if (has('E')) bars.push([0, 0, s, mid + s]);
+
+  if (has('B') && has('C')) bars.push([cell - s, 0, cell, 1]);
+  else if (has('B')) bars.push([cell - s, mid, cell, 1]);
+  else if (has('C')) bars.push([cell - s, 0, cell, mid + s]);
+
+  return bars;
+}
+
+/**
+ * Styled variant: full, complete, unmistakable typography.
  */
 function styledDigitBars(d, s, gap, cell) {
   const top = 1 - s;
 
   if (d === 1) {
+    // Solid, classic sans-serif 1:
+    // Centered vertical stem, sharp top hook pointing down-left, solid base serif.
     const xc = cell / 2;
+    const stemL = xc - s / 2;
+    const stemR = xc + s / 2;
+    const hookL = Math.max(0, stemL - 1.2 * s);
     return [
-      [0, top, xc + s / 2, 1], // flag
-      [xc - s / 2, s + gap, xc + s / 2, top - gap], // stem
-      [0, 0, cell, s], // base serif
+      [stemL, 0, stemR, 1],
+      [hookL, top - 0.01, stemR, 1],
+      [hookL, top - 0.7 * s, hookL + s, top],
+      [0, 0, cell, s],
     ];
   }
 
   if (d === 4) {
-    // A four is identified by a bar that runs clean across and past the stem. The
-    // top bar must NOT be added: with a closed top and no bottom bar it is the
-    // spitting image of a nine. Full-width crossbar, open top, no base bar.
-    const mid = 0.5 - s / 2;
+    // True sans-serif 4:
+    // Continuous right stem, left upper arm from cap down to crossbar,
+    // crossbar crossing cleanly through the right stem. Open top, open bottom.
+    const rightStemL = cell - s;
+    const midY = 0.38 - s / 2;
     return [
-      [0, mid, cell, mid + s], // crossbar, full width
-      [0, mid + s + gap, s, 1 - s - gap], // left arm above the bar
-      [cell - s, mid + s + gap, cell, 1 - s - gap], // stem above
-      [cell - s, s + gap, cell, mid - gap], // stem below
+      [rightStemL, 0, cell, 1],
+      [0, midY, cell, midY + s],
+      [0, midY, s, 1],
     ];
   }
 
-  return digitBars(DIGITS[d], s, gap, cell);
+  if (d === 7) {
+    // Official / banking 7:
+    // Full-width top bar with downward hook on top-left,
+    // stepped diagonal stem from top-right down to lower-center,
+    // and an Indian/European middle crossbar distinguishing it unmistakably from 1.
+    const bars = [];
+    bars.push([0, top - 0.01, cell, 1]);
+    bars.push([0, top - 0.7 * s, s, top]);
+
+    const steps = 7;
+    const botX = cell * 0.32;
+    const topX = cell - s;
+    for (let k = 0; k < steps; k++) {
+      const t0 = k / steps;
+      const t1 = (k + 1) / steps;
+      const y0 = t0 * top;
+      const y1 = Math.min(top + 0.01, t1 * top + 0.01);
+      const x0 = botX * (1 - t0) + topX * t0;
+      bars.push([x0, y0, x0 + s, y1]);
+    }
+
+    const midY = 0.52 - s / 2;
+    bars.push([cell * 0.22, midY, cell * 0.82, midY + s]);
+    return bars;
+  }
+
+  return digitBarsMerged(DIGITS[d], s, cell);
 }
 
 /** Build the bar rectangles for one character, in the unit box. */
@@ -118,8 +160,6 @@ function charGeometry(ch, s, gap, aspect, style) {
   const h = gap / 2;
 
   if (ch === '+') {
-    // Three mutually clear bars rather than one plus-shaped polygon, so the gap
-    // discipline is the same everywhere.
     const cw = 0.64;
     const cx = cw / 2;
     const cy = 0.5;
@@ -159,12 +199,11 @@ function charGeometry(ch, s, gap, aspect, style) {
   if (!segs) return { advance: SPACE_ADVANCE, bars: [] };
 
   const narrow = NARROW.has(ch);
-  const cell = narrow ? 0.36 : aspect;
+  const cell = narrow ? 0.44 : aspect;
   const styled = style !== 'digital';
   let bars = styled ? styledDigitBars(Number(ch), s, gap, cell) : digitBars(segs, s, gap, cell);
 
   if (narrow && !styled) {
-    // digital "1" is a single column; centre it in its own narrow cell.
     const xc = cell / 2;
     bars = bars.map((r) => [xc - s / 2, r[1], xc + s / 2, r[3]]);
   }
@@ -175,15 +214,6 @@ function charGeometry(ch, s, gap, aspect, style) {
 /**
  * Lay out a string into bar rectangles, in millimetres.
  * The block is centred on x = 0 and sits on y = 0.
- *
- * @param {string} text
- * @param {object} o
- * @param {number} o.height   cap height in mm
- * @param {number} o.stroke   stroke as a fraction of height
- * @param {number} o.gap      gap between segments, fraction of height
- * @param {number} o.tracking extra space between characters, fraction of height
- * @param {number} o.aspect   width of a digit cell, fraction of height
- * @returns {{bars: Array<{x,y,w,h}>, width:number, height:number}}
  */
 export function layoutText(text, o) {
   const height = o.height;
@@ -228,9 +258,3 @@ export function sanitize(raw) {
     .join('')
     .slice(0, 16);
 }
-
-
-
-
-
-

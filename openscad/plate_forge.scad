@@ -1,6 +1,6 @@
 // =============================================================================
 //  Plate Forge — car parking number plate
-//  Single colour, single sided, engraved digits, reusable 30° easel.
+//  Single colour, single sided, engraved digits, single-piece grooved wedge stand.
 //  Tuned for a Bambu Lab A1 mini (180 × 180 × 180).
 //
 //  MakerWorld Parametric Model Maker ready:
@@ -8,13 +8,8 @@
 //    · mw_plate_1() for the printable output
 //    · mw_assembly_view() for the assembled preview
 //
-//  Why engraved: a 0.6 mm groove has a rim that acts as a paint dam and a floor
-//  the slicer can iron flat, so a permanent marker fills it cleanly and wipes off
-//  the face. Vertical groove walls mean no layer stair-stepping in the outline.
-//
 //  Print the panel back-face-down, number face up, ironing ON ("All top
-//  surfaces"). Print the easel standing on its base — no supports either way.
-//  Full settings are in PRINT-SETTINGS.md.
+//  surfaces"). Print the stand standing on its base — no supports either way.
 // =============================================================================
 
 /* [The number] */
@@ -23,7 +18,7 @@
 number = "98765 43210";
 
 // What to generate on the plate
-mode = "both"; // [both:Panel + rack, panel:Panel only, rack:Rack only, coupon:Pen test coupon]
+mode = "both"; // [both:Panel + stand, panel:Panel only, rack:Stand only, coupon:Pen test coupon]
 
 /* [Digit relief] */
 
@@ -52,20 +47,20 @@ corner_radius = 4; // [0:0.5:14]
 side_gap = 8; // [2:1:26]
 end_gap = 6; // [2:1:22]
 
-/* [Easel] */
+/* [Stand] */
 
 // Rake from vertical. 30° lines up with a modern windscreen.
 rake_deg = 30; // [0:1:45]
 easel_fin = 4; // [3:0.5:6]
 easel_clearance = 0.4;
-easel_lip = 10; // [4:1:14]
+easel_lip = 8; // [4:1:14]
 
 with_rack = (mode == "both" || mode == "rack");
 
 /* [Hidden] */
 
 $fn = 48;
-max_panel_width = 166;
+max_panel_width = 160;
 plate_gap = 8;
 EPS = 0.01;
 
@@ -74,7 +69,7 @@ EPS = 0.01;
 // ---------------------------------------------------------------------------
 
 aspect = 0.62; // digit cell width
-narrow = 0.36; // cell width for "1"
+narrow = 0.44; // cell width for "1"
 
 // 7-segment membership per digit
 SEGS = ["ABCDEF", "BC", "ABGED", "ABGCD", "FGBC", "AFGCD", "AFGECD", "ABC", "ABCDEFG", "ABCDFG"];
@@ -100,18 +95,15 @@ function advance_sum(s, i = 0, acc = 0) =
 
 function text_width(s) = advance_sum(s) + tracking * max(0, len(s) - 1);
 
-// x offset (in cap-height units) of each character
 function offsets(s, i = 0, acc = 0, out = []) =
     i >= len(s) ? out :
     offsets(s, i + 1, acc + char_advance(s[i]) + tracking, concat(out, [acc]));
 
-/** Cap height after shrinking the layout to fit the plate width. */
 function fitted_height() =
     let (tw = text_width(number) * digit_height)
     let (scale = min(1, (max_panel_width - 2 * side_gap) / tw))
     digit_height * scale;
 
-/** Panel width for a given string and height. */
 function panel_width(s, h) = text_width(s) * h + 2 * side_gap;
 function panel_height(h) = h + 2 * end_gap;
 
@@ -119,60 +111,65 @@ function panel_height(h) = h + 2 * end_gap;
 //  Glyphs
 // ---------------------------------------------------------------------------
 
-/**
- * Segment rectangles of one digit in cap-height units.
- * Horizontal bars run the full cell width; verticals stop short of them, which
- * is what makes a 7-segment digit read as a digit instead of two columns.
- */
-function seg_rect(cell, s, g, k) =
-    k == "A" ? [0, 1 - s, cell, 1] :
-    k == "D" ? [0, 0, cell, s] :
-    k == "G" ? [0, 0.5 - s / 2, cell, 0.5 + s / 2] :
-    k == "F" ? [0, 0.5 - s / 2 + s + g, s, 1 - s - g] :
-    k == "B" ? [cell - s, 0.5 - s / 2 + s + g, cell, 1 - s - g] :
-    k == "E" ? [0, s + g, s, 0.5 - s / 2 - g] :
-    k == "C" ? [cell - s, s + g, cell, 0.5 - s / 2 - g] :
-    [0, 0, 0, 0];
-
 module bar(r, h) {
     translate([r[0] * h, r[1] * h])
         square([(r[2] - r[0]) * h, (r[3] - r[1]) * h]);
 }
 
-module side_bar(upper, lower, x0, x1, h, s, g) {
-    top = 1 - s;
-    mid = 0.5 - s / 2;
-    if (upper && lower)
-        bar([x0, s + g, x1, top - g], h);
-    else if (upper)
-        bar([x0, mid + s + g, x1, top - g], h);
-    else if (lower)
-        bar([x0, s + g, x1, mid - g], h);
-}
-
 /**
- * One digit. The middle bar is inset from both cell edges so the left and right
- * verticals can run as ONE continuous stroke when both halves are lit — a split
- * vertical is what makes a 7, 1 or 4 look like three floating dashes.
+ * Solid sans-serif typography with continuous strokes, proper 1, 4, and 7.
  */
 module digit_glyph(d, h, s, g) {
     cell = d == 1 ? narrow : aspect;
-    set = SEGS[d];
     top = 1 - s;
     mid = 0.5 - s / 2;
-    has = function(k) len(search(k, set)) > 0;
-
-    if (has("A")) bar([0, top, cell, 1], h);
-    if (has("D")) bar([0, 0, cell, s], h);
-    if (has("G")) bar([s + g, mid, cell - s - g, mid + s], h);
 
     if (d == 1) {
-        // single centred column
+        // Solid classic sans-serif 1: stem, hook with barb, wide base serif
         xc = cell / 2;
-        bar([xc - s / 2, s + g, xc + s / 2, top - g], h);
+        stemL = xc - s / 2;
+        stemR = xc + s / 2;
+        hookL = max(0, stemL - 1.2 * s);
+        bar([stemL, 0, stemR, 1], h);
+        bar([hookL, top - 0.01, stemR, 1], h);
+        bar([hookL, top - 0.7 * s, hookL + s, top], h);
+        bar([0, 0, cell, s], h);
+    } else if (d == 4) {
+        // True sans-serif 4: continuous full-height stem, continuous crossbar, upper left arm
+        rightStemL = cell - s;
+        midY = 0.38 - s / 2;
+        bar([rightStemL, 0, cell, 1], h);
+        bar([0, midY, cell, midY + s], h);
+        bar([0, midY, s, 1], h);
+    } else if (d == 7) {
+        // Banking / Indian 7: top bar, downward hook, diagonal stepped stem, middle crossbar
+        bar([0, top - 0.01, cell, 1], h);
+        bar([0, top - 0.7 * s, s, top], h);
+        steps = 7;
+        botX = cell * 0.32;
+        topX = cell - s;
+        for (k = [0:steps-1]) {
+            t0 = k / steps;
+            t1 = (k + 1) / steps;
+            y0 = t0 * top;
+            y1 = min(top + 0.01, t1 * top + 0.01);
+            x0 = botX * (1 - t0) + topX * t0;
+            bar([x0, y0, x0 + s, y1], h);
+        }
+        midY = 0.52 - s / 2;
+        bar([cell * 0.22, midY, cell * 0.82, midY + s], h);
     } else {
-        side_bar(has("F"), has("E"), 0, s, h, s, g);
-        side_bar(has("B"), has("C"), cell - s, cell, h, s, g);
+        set = SEGS[d];
+        has = function(k) len(search(k, set)) > 0;
+        if (has("A")) bar([0, top - 0.005, cell, 1], h);
+        if (has("D")) bar([0, 0, cell, s + 0.005], h);
+        if (has("G")) bar([0, mid - 0.005, cell, mid + s + 0.005], h);
+        if (has("F") && has("E")) bar([0, 0, s, 1], h);
+        else if (has("F")) bar([0, mid, s, 1], h);
+        else if (has("E")) bar([0, 0, s, mid + s], h);
+        if (has("B") && has("C")) bar([cell - s, 0, cell, 1], h);
+        else if (has("B")) bar([cell - s, mid, cell, 1], h);
+        else if (has("C")) bar([cell - s, 0, cell, mid + s], h);
     }
 }
 
@@ -218,8 +215,7 @@ module rounded_rect(w, h, r) {
 }
 
 /**
- * The number panel. Origin at the bottom-left of the back face, z = 0 on the
- * build plate, number face up — exactly the print orientation.
+ * The number panel. Origin at bottom-center of the back face, z = 0 on build plate.
  */
 module panel(str = number, h = -1, thick = panel_thickness, rad = corner_radius) {
     hh = h < 0 ? fitted_height() : h;
@@ -227,16 +223,10 @@ module panel(str = number, h = -1, thick = panel_thickness, rad = corner_radius)
     hp = panel_height(hh);
     rel = max(0.2, min(1.4, relief_depth));
 
-    union() {
+    translate([-w / 2, 0, 0]) union() {
         difference() {
             linear_extrude(height = thick)
                 rounded_rect(w, hp, rad);
-
-            // detent pocket in the bottom edge, for the rack's click
-            if (with_rack) {
-                translate([w / 2 - 32, -1, -1])
-                    cube([10, 0.9 + 1, thick + 2]);
-            }
 
             if (lettering == "engraved")
                 translate([w / 2, end_gap, thick - rel])
@@ -252,136 +242,96 @@ module panel(str = number, h = -1, thick = panel_thickness, rad = corner_radius)
 }
 
 // ---------------------------------------------------------------------------
-//  Easel
+//  Stand (Single-piece grooved wedge mount)
 // ---------------------------------------------------------------------------
-
-function fin_h(panel_h) = max(8, panel_h * 0.86);
 
 function lip_height() = min(easel_lip, max(4, panel_height(fitted_height()) * 0.22));
 
-/** A box given in plate-frame extents: u across, v up the plate, w along the normal. */
-module pbox(u0, u1, v0, v1, w0, w1) {
-    uc = (u0 + u1) / 2;
-    vc = (v0 + v1) / 2;
-    wc = (w0 + w1) / 2;
-    base = lip_height();
-    translate([uc,
-               base + vc * cos(rake_deg) + wc * sin(rake_deg),
-               -vc * sin(rake_deg) + wc * cos(rake_deg)])
-        rotate([-rake_deg, 0, 0])
-            cube([u1 - u0 + 0.1, v1 - v0 + 0.1, w1 - w0 + 0.1], center = true);
-}
-
 /**
- * The rack the panel slides into.
- *
- * A frame sits behind the panel, and three rails (bottom, top, far end) stand outboard
- * of it, each with a lip that overlaps the number face. The panel enters from the open
- * near end and travels the channel; a detent on the floor clicks into the pocket in the
- * panel's bottom edge. Nothing is glued, and a firm pull cams the detent back out.
- *
- * The near 6 mm of the panel stands proud of the rack so there is something to grip.
+ * Single-piece grooved wedge stand.
+ * Two side wedges with inner channels running down the front rake.
+ * Prints flat on its base with zero supports.
  */
-module rack() {
+module stand() {
     hh = fitted_height();
     pw = panel_width(number, hh);
     ph = panel_height(hh);
     th = panel_thickness;
     base = lip_height();
 
-    cl = 0.3;
-    topcl = 1.1;
-    tb = 2.4;
-    bw = 7;
-    railT = 3.2;
-    lipT = 1.6;
-    lipIn = 2.6;
-    wcl = 0.25;
-    grip = 6;
-    detent = 0.9;
+    clSide = 0.4;
+    clThick = 0.4;
+    slotW = th + clThick;
+    slotDepth = 3.5;
+    wallThick = 3.5;
+    wedgeThick = slotDepth + wallThick;
 
-    x0 = -pw / 2;
-    x1 = pw / 2;
-    chU0 = x0 + grip;
-    chU1 = x1 + cl;
-    wLip = wcl + th;
-
-    // frame behind the panel: four bands, middle open
-    pbox(x0 - bw, chU0, -bw, ph + topcl + bw, -tb, 0);
-    pbox(chU0, chU1, -bw, 0, -tb, 0);
-    pbox(chU0, chU1, ph + topcl, ph + topcl + bw, -tb, 0);
-    pbox(chU1, x1 + bw, -bw, ph + topcl + bw, -tb, 0);
-
-    // rails, outboard of the panel
-    pbox(chU0, x1 + bw, -railT, 0, 0, wLip);
-    pbox(chU0, x1 + bw, ph + topcl, ph + topcl + railT, 0, wLip);
-    pbox(chU1, chU1 + railT, 0, ph + topcl, 0, wLip);
-
-    // lips, overlapping the number face
-    pbox(chU0, x1 + bw, 0, lipIn, wLip, wLip + lipT);
-    pbox(chU0, x1 + bw, ph - lipIn, ph, wLip, wLip + lipT);
-    pbox(chU1 - lipIn, chU1, 0, ph, wLip, wLip + lipT);
-
-    // detent: a stepped pyramid on the channel floor, ramped in and out
-    n0 = x1 - 32;
-    n1 = n0 + 10;
-    for (i = [0:3]) {
-        inset = (detent - 0.1) * (1 - (i + 1) / 4);
-        hgt = (detent - 0.1) * ((i + 1) / 4);
-        pbox(n0 + inset, n1 - inset, 0, hgt, 0, th + wcl);
-    }
-
-    // stance: plinth, two fins, tie
-    rack_w = pw + 2 * bw;
-    plinth_d = th + 6;
-    translate([-rack_w / 2, 0, -1.5])
-        cube([rack_w, base, plinth_d + 1.5]);
+    halfInner = pw / 2 + clSide;
+    totalW = 2 * (halfInner + wedgeThick);
 
     tanr = tan(rake_deg);
+    cosr = cos(rake_deg);
+    sinr = sin(rake_deg);
     hb = max(8, ph * 0.86);
-    rear = max(16, min(46, ph * 0.62));
+    rear = max(18, min(46, ph * 0.62));
+
+    // Outer fins
     A = [-hb * tanr, base + hb];
     B = [0, base];
     C = [0, 0];
     D = [-rear, 0];
     for (sgn = [-1, 1]) {
-        xl = sgn > 0 ? rack_w / 2 : -rack_w / 2;
+        xl = sgn > 0 ? halfInner + slotDepth : -halfInner - slotDepth - wallThick;
         translate([xl, 0, 0])
             rotate([0, -90, 0])
-                linear_extrude(height = 4)
+                linear_extrude(height = wallThick)
                     polygon(points = [A, B, C, D]);
+
+        // Channel flanges along the rake slope
+        chX = sgn > 0 ? halfInner : -halfInner - slotDepth;
+        chLen = hb + 2;
+        // Back flange
+        translate([chX, base, 0])
+            rotate([-rake_deg, 0, 0])
+                translate([0, 0, -2.4])
+                    cube([slotDepth, chLen, 2.4]);
+        // Front lip
+        translate([chX, base, 0])
+            rotate([-rake_deg, 0, 0])
+                translate([0, 0, slotW])
+                    cube([slotDepth, chLen, 1.8]);
     }
 
-    translate([-rack_w / 2, 0, -rear * 0.62 - 2.5])
-        cube([rack_w, 4, 5]);
+    // Front plinth (bottom ledge stop + front bridge)
+    plinthD = slotW + 3;
+    translate([-totalW / 2, 0, -1.5])
+        cube([totalW, base, plinthD + 1.5]);
+
+    // Rear tie bar
+    translate([-totalW / 2, 0, -rear * 0.7])
+        cube([totalW, 4, 5]);
 }
 
-/** The rack as it prints: up is already Z, so it needs no rotation. */
+module rack() {
+    stand();
+}
+
+/** The stand as it prints: sitting flat on its base on the bed. */
 module rack_on_bed() {
-    rotate([90, 0, 0]) rack();
+    stand();
 }
-/** Panel seated in the rack: it lies in the plate frame, so only the origin moves. */
+
+/** Panel seated in the stand: it drops into the channels. */
 module assembly() {
-    hh = fitted_height();
-    pw = panel_width(number, hh);
     base = lip_height();
-    wcl = 0.25;
-    rack();
-    translate([0, base + wcl * sin(rake_deg), wcl * cos(rake_deg)])
+    stand();
+    translate([0, base, 0])
         rotate([-rake_deg, 0, 0])
-            translate([-pw / 2, 0, 0])
-                panel();
+            panel();
 }
-
-mw_plate_1();
-
-
-
-
-
 
 // ---------------------------------------------------------------------------
-//  Pen test coupon — one short print that tells you which relief takes ink
+//  Pen test coupon
 // ---------------------------------------------------------------------------
 
 module coupon_tile(lg, rd) {
@@ -422,14 +372,15 @@ module plate_contents() {
     ph = panel_height(hh);
 
     if (mode == "panel") {
-        translate([-pw / 2, 0, 0]) panel();
+        panel();
     } else if (mode == "rack") {
-        rack_on_bed();
+        stand();
     } else if (mode == "coupon") {
         coupon();
     } else {
-        translate([-pw / 2, ph + 8, 0]) panel();
-        rack_on_bed();
+        // Both: stand on bed, panel beside it
+        stand();
+        translate([0, ph + 8, 0]) panel();
     }
 }
 
@@ -442,7 +393,3 @@ module mw_assembly_view() {
 }
 
 mw_plate_1();
-
-
-
-

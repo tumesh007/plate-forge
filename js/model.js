@@ -7,10 +7,16 @@
  *   z : through the plate, 0 at the BACK face, +thickness at the FRONT (number) face
  *
  * The panel is built in exactly the orientation it should be printed in: back face on
- * the bed, number face up. Nothing needs flipping and nothing needs supports.
+ * the bed, number face up.
+ *
+ * The stand is a SINGLE-PIECE grooved wedge mount:
+ *   - Two thickened side wedges with inward-facing channels running down the front rake.
+ *   - The panel slides in from the top and sits on the bottom ledge stop.
+ *   - Connected by a front plinth and a rear tie bar.
+ *   - Prints upright on its flat base on the bed with 0 supports (satisfying the 45° rule).
  */
 import * as THREE from 'three';
-import { layoutText } from './glyphs.js?v=6';
+import { layoutText } from './glyphs.js?v=7';
 
 const deg = Math.PI / 180;
 
@@ -40,32 +46,23 @@ export const PROFILES = {
   fine: { nozzle: 0.4, layer: 0.12, label: '0.4 nozzle / 0.12 mm' },
 };
 
-/** Widest the panel may get so the rack still clears the A1 mini's 180 mm bed. */
-const MAX_PANEL_W = 164;
+/** Widest the panel may get so the stand still clears the A1 mini's 180 mm bed. */
+const MAX_PANEL_W = 160;
 
-/** Every rack dimension, in mm. */
+/** Stand dimension presets. */
 export const RACK = {
-  cl: 0.35, // side clearance between plate edge and pillar
-  tb: 2.6, // back plate thickness (this face sits on the bed)
-  bw: 6, // border around the plate
-  pillarT: 3.5, // pillar width across
-  pillarH: 6, // pillar height off the back plate
-  lipT: 1.6, // lip thickness
-  lipIn: 3.0, // how far the lip overlaps the number face
-  detent: 0.9, // how deep the click sits
+  cl: 0.4,
+  tb: 2.6,
+  bw: 7,
+  pillarT: 4.0,
+  pillarH: 6.0,
+  lipT: 1.8,
+  lipIn: 2.5,
+  detent: 0.9,
+  topCl: 1.0,
 };
 
 /* ------------------------------------------------------------------ 2D helpers */
-
-function signedArea(ring) {
-  let s = 0;
-  for (let i = 0; i < ring.length; i++) {
-    const a = ring[i];
-    const b = ring[(i + 1) % ring.length];
-    s += a[0] * b[1] - b[0] * a[1];
-  }
-  return s / 2;
-}
 
 function uniqSorted(values, lo, hi, eps = 1e-7) {
   const kept = values
@@ -79,12 +76,6 @@ function uniqSorted(values, lo, hi, eps = 1e-7) {
   return out;
 }
 
-/**
- * Panel outline: a rounded rectangle, optionally with a rectangular notch bitten out
- * of the bottom edge (the detent pocket). The four quarter-round corners are returned
- * separately because the faces are triangulated by exact grid decomposition and the
- * corners are fanned off their arc centres.
- */
 function outlinePoints(w, h, r, notch, seg = 8) {
   const rr = Math.max(0, Math.min(r, Math.min(w, h) / 2 - 0.2));
   const x0 = -w / 2;
@@ -125,13 +116,10 @@ function outlinePoints(w, h, r, notch, seg = 8) {
     push([notch.x1, 0]);
   }
   push([x1 - rr, 0]);
-  // Each arc contributes its own start point; the straight run between two arcs is
-  // implied by the jump from one arc's last point to the next arc's first. Pushing
-  // those connectors explicitly would duplicate vertices and break the wall loop.
-  br.pts.slice(1).forEach(push); // ends at (x1, rr)
-  tr.pts.forEach(push); // starts (x1, h-rr), ends (x1-rr, h)
-  tl.pts.forEach(push); // starts (x0+rr, h), ends (x0, h-rr)
-  bl.pts.forEach(push); // starts (x0, rr), ends (x0+rr, 0) = the first point
+  br.pts.slice(1).forEach(push);
+  tr.pts.forEach(push);
+  tl.pts.forEach(push);
+  bl.pts.forEach(push);
 
   const f = ring[0];
   const l = ring[ring.length - 1];
@@ -140,7 +128,6 @@ function outlinePoints(w, h, r, notch, seg = 8) {
   return { ring, corners: [br, tr, tl, bl], rr, segs };
 }
 
-/** Insert every grid coordinate that falls strictly inside an axis-aligned segment. */
 function subdivideRing(ring, xs, ys) {
   const out = [];
   const eq = (a, b) => Math.abs(a - b) < 1e-9;
@@ -162,31 +149,6 @@ function subdivideRing(ring, xs, ys) {
   return out;
 }
 
-/** Rectangle ring for a digit bar, subdivided at every interior grid line. */
-function barRing(b, xs, ys) {
-  const ax = b.x;
-  const bx = b.x + b.w;
-  const ay = b.y;
-  const by = b.y + b.h;
-  const e = 1e-9;
-  const out = [[ax, ay]];
-  for (const y of ys) if (y > ay + e && y < by - e) out.push([ax, y]);
-  out.push([ax, by]);
-  for (const x of xs) if (x > ax + e && x < bx - e) out.push([x, by]);
-  out.push([bx, by]);
-  for (let i = ys.length - 1; i >= 0; i--) {
-    const y = ys[i];
-    if (y > ay + e && y < by - e) out.push([bx, y]);
-  }
-  out.push([bx, ay]);
-  for (let i = xs.length - 1; i >= 0; i--) {
-    const x = xs[i];
-    if (x > ax + e && x < bx - e) out.push([x, ay]);
-  }
-  return out;
-}
-
-/** Insert grid coordinates that fall strictly inside the segment a-b. */
 function subdivideSegment(a, b, xs, ys) {
   const eq = (p, q) => Math.abs(p - q) < 1e-9;
   const out = [a];
@@ -245,20 +207,6 @@ class Solid {
     }
   }
 
-  capRing(ring, z) {
-    let cx = 0;
-    let cy = 0;
-    for (const p of ring) {
-      cx += p[0];
-      cy += p[1];
-    }
-    cx /= ring.length;
-    cy /= ring.length;
-    for (let i = 0; i < ring.length; i++) {
-      this.triUp([cx, cy], ring[i], ring[(i + 1) % ring.length], z);
-    }
-  }
-
   geometry() {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.v), 3));
@@ -299,10 +247,9 @@ function signedVolume(v) {
 /**
  * The number panel, as ONE closed manifold surface.
  *
- * The front and back faces are triangulated by exact grid decomposition, not earcut.
- * Every cut-out here is axis-aligned, so the region between the panel edge and the
- * digit bars is rectilinear; a grid over the unique x/y coordinates tiles it exactly,
- * with no slivers and no T-junctions.
+ * Front face, back face, and vertical groove walls are generated via exact 2D grid cell
+ * decomposition. Overlapping and contiguous strokes merge seamlessly without internal walls
+ * or degenerate edges, producing an airtight manifold.
  */
 export function buildPanel(p) {
   const d = derive(p);
@@ -319,8 +266,8 @@ export function buildPanel(p) {
   const outline = outlinePoints(W, H, d.radiusSafe, notch);
 
   const solid = new Solid();
-  const capZ = T;
-  const floorZ = T - R;
+  const capZ = raised ? T + R : T;
+  const floorZ = raised ? T : T - R;
 
   const xset = [x0, x1];
   const yset = [0, H];
@@ -355,32 +302,80 @@ export function buildPanel(p) {
     return outline.segs > 0 && side && end;
   };
 
-  for (let i = 0; i < xs.length - 1; i++) {
-    for (let j = 0; j < ys.length - 1; j++) {
-      const ax = xs[i];
-      const bx = xs[i + 1];
-      const ay = ys[j];
-      const by = ys[j + 1];
+  const nx = xs.length - 1;
+  const ny = ys.length - 1;
+  const cellType = Array.from({ length: nx }, () => new Int8Array(ny)); // 0: outside, 1: solid, 2: groove
+
+  for (let i = 0; i < nx; i++) {
+    for (let j = 0; j < ny; j++) {
+      const ax = xs[i], bx = xs[i + 1];
+      const ay = ys[j], by = ys[j + 1];
       if (bx - ax < 1e-9 || by - ay < 1e-9) continue;
       if (isCornerCell(ax, bx, ay, by)) continue;
       const mx = (ax + bx) / 2;
       const my = (ay + by) / 2;
       if (inNotch(mx, my)) continue;
-      // back face: solid everywhere the notch is not
+
+      // Solid back face
       solid.triDown([ax, ay], [bx, ay], [bx, by], 0);
       solid.triDown([ax, ay], [bx, by], [ax, by], 0);
-      // front face: minus the digits
-      if (inBar(mx, my)) continue;
-      solid.triUp([ax, ay], [bx, ay], [bx, by], capZ);
-      solid.triUp([ax, ay], [bx, by], [ax, by], capZ);
+
+      const inG = inBar(mx, my);
+      cellType[i][j] = inG ? 2 : 1;
+
+      if (!inG) {
+        // Solid top face
+        const z = raised ? T : capZ;
+        solid.triUp([ax, ay], [bx, ay], [bx, by], z);
+        solid.triUp([ax, ay], [bx, by], [ax, by], z);
+      } else {
+        // Groove floor / raised top
+        const z = raised ? capZ : floorZ;
+        solid.triUp([ax, ay], [bx, ay], [bx, by], z);
+        solid.triUp([ax, ay], [bx, by], [ax, by], z);
+      }
     }
   }
 
-  // Quarter-round corners. The two radii are split at the same grid lines the rest of
-  // the face uses, and the first/last fan triangles are replaced by strips along those
-  // radii — otherwise the fan meets the grid at a T-junction.
+  // Groove walls along cell boundaries between solid and groove
+  const zBot = raised ? T : floorZ;
+  const zTop = raised ? capZ : T;
+
+  for (let i = 0; i < nx; i++) {
+    for (let j = 0; j < ny; j++) {
+      const c = cellType[i][j];
+      const right = i + 1 < nx ? cellType[i + 1][j] : 0;
+      if ((c === 2 && right === 1) || (c === 1 && right === 2)) {
+        const x = xs[i + 1];
+        const y0 = ys[j], y1 = ys[j + 1];
+        if (c === 2) {
+          solid.tri([x, y0, zBot], [x, y1, zTop], [x, y1, zBot]);
+          solid.tri([x, y0, zBot], [x, y0, zTop], [x, y1, zTop]);
+        } else {
+          solid.tri([x, y0, zBot], [x, y1, zBot], [x, y1, zTop]);
+          solid.tri([x, y0, zBot], [x, y1, zTop], [x, y0, zTop]);
+        }
+      }
+
+      const top = j + 1 < ny ? cellType[i][j + 1] : 0;
+      if ((c === 2 && top === 1) || (c === 1 && top === 2)) {
+        const y = ys[j + 1];
+        const x0 = xs[i], x1 = xs[i + 1];
+        if (c === 2) {
+          solid.tri([x0, y, zBot], [x1, y, zBot], [x1, y, zTop]);
+          solid.tri([x0, y, zBot], [x1, y, zTop], [x0, y, zTop]);
+        } else {
+          solid.tri([x0, y, zBot], [x1, y, zTop], [x1, y, zBot]);
+          solid.tri([x0, y, zBot], [x0, y, zTop], [x1, y, zTop]);
+        }
+      }
+    }
+  }
+
+  // Quarter-round corners
+  const topZ = raised ? T : capZ;
   const emit = (a, b, c) => {
-    solid.triUp(a, b, c, capZ);
+    solid.triUp(a, b, c, topZ);
     solid.triDown(a, b, c, 0);
   };
   for (const corner of outline.corners) {
@@ -397,19 +392,9 @@ export function buildPanel(p) {
     for (let i = 0; i < r1.length - 1; i++) emit(r1[i], r1[i + 1], pts[n - 2]);
   }
 
+  // Outer perimeter wall
   const ring = subdivideRing(outline.ring, xs, ys);
-  solid.wall(ring, 0, capZ);
-
-  for (const b of bars) {
-    const r = barRing(b, xs, ys);
-    if (raised) {
-      solid.wall(r, T, T + R, true);
-      solid.capRing(r, T + R);
-    } else {
-      solid.wall(r, floorZ, T);
-      solid.capRing(r, floorZ);
-    }
-  }
+  solid.wall(ring, 0, topZ);
 
   g.add(new THREE.Mesh(solid.geometry(), null));
   g.userData.dims = d;
@@ -448,14 +433,11 @@ export function derive(p) {
   const tilt = Math.max(0, Math.min(45, p.tilt));
   const hasRack = p.mount === 'rack';
 
-  // detent pocket, near the closed end of the channel
   const notchW = 10;
   const notch = hasRack
     ? { x0: width / 2 - 32, x1: width / 2 - 32 + notchW, depth: RACK.detent }
     : null;
 
-  // The corner radius must stop short of the detent pocket, or the quarter-round
-  // corner band swallows grid cells that belong to the notch.
   const radiusSafe = Math.max(
     0,
     Math.min(
@@ -468,12 +450,14 @@ export function derive(p) {
   );
 
   const lipH = Math.min(10, Math.max(4, height * 0.22));
-  const rearFoot = Math.max(16, Math.min(46, height * 0.62));
+  const rearFoot = Math.max(18, Math.min(46, height * 0.62));
   const hb = Math.max(8, height * 0.86);
 
-  const rackWidth = width + RACK.bw * 2;
+  const wedgeThick = 7.0;
+  const clSide = 0.4;
+  const rackWidth = width + 2 * (clSide + wedgeThick);
   const rackDepth = rearFoot + thickness + 9;
-  const rackHeight = lipH + (height + RACK.topCl + RACK.bw) * Math.cos(tilt * deg);
+  const rackHeight = lipH + (height + 2) * Math.cos(tilt * deg);
 
   return {
     ...p,
@@ -484,6 +468,7 @@ export function derive(p) {
     textWidth: text.width,
     tilt,
     hasRack,
+    hasStand: hasRack,
     notch,
     radiusSafe,
     fitScale,
@@ -495,98 +480,61 @@ export function derive(p) {
     rackWidth,
     rackDepth,
     rackHeight,
+    standWidth: rackWidth,
     standDepth: rackDepth,
+    standHeight: rackHeight,
   };
 }
 
-/* ------------------------------------------------------------------ rack */
+/* ------------------------------------------------------------------ stand (one-piece grooved wedge) */
 
 /**
- * The rack the panel drops into.
+ * The single-piece grooved wedge stand.
  *
- * Two side pillars and a bottom ledge stand off a back plate, each finishing in a lip
- * that overlaps the number face. The plate enters from the TOP, drops between the
- * pillars, lands on the ledge and clicks into a detent. Nothing is glued.
+ * Two side wedges with inward-facing U-channels running down the front rake.
+ * The plate enters from the top, slides down between the wedges, and lands on the
+ * bottom plinth stop.
  *
- * Everything here is extruded perpendicular to the back plate in +w, so the part is
- * modelled in its print orientation: lay the back plate on the bed and every feature
- * rises vertically. No supports, no bridging.
+ * Prints standing on its flat base on the bed with ZERO supports (slope < 45° overhang).
  */
-export function buildRack(p) {
+export function buildStand(p) {
   const d = derive(p);
   const g = new THREE.Group();
-  g.name = 'rack';
-  if (!d.hasRack) return g;
-
-  const { width: W, height: H, thickness: T, notch } = d;
-  const { cl, tb, bw, pillarT, pillarH, lipT, lipIn } = RACK;
-  const x0 = -W / 2;
-  const x1 = W / 2;
-  const top = H + bw;
-  const bot = -bw;
-  const ov = 0.05;
-
-  /** Box in rack coordinates: x across, y up, z out of the back plate (print up). */
-  const box = (u0, u1, v0, v1, w0, w1, gr = ov) => {
-    const geo = new THREE.BoxGeometry(u1 - u0 + gr * 2, v1 - v0 + gr * 2, w1 - w0 + gr * 2);
-    geo.translate((u0 + u1) / 2, (v0 + v1) / 2, (w0 + w1) / 2);
-    return new THREE.Mesh(geo, null);
-  };
-
-  /* back plate — this is the face that sits on the bed */
-  g.add(box(x0 - bw, x1 + bw, bot, top, 0, tb));
-
-  /* the two pillars the plate slides between */
-  g.add(box(x0 - cl - pillarT, x0 - cl, bot, top, tb, tb + pillarH));
-  g.add(box(x1 + cl, x1 + cl + pillarT, bot, top, tb, tb + pillarH));
-
-  /* bottom ledge: the plate lands on this */
-  g.add(box(x0 - cl, x1 + cl, bot, -cl, tb, tb + pillarH));
-
-  /* lips: overlap the number face on both sides and the bottom */
-  g.add(box(x0 - cl, x0 - cl + lipIn, bot, top, tb + pillarH, tb + pillarH + lipT));
-  g.add(box(x1 + cl - lipIn, x1 + cl, bot, top, tb + pillarH, tb + pillarH + lipT));
-  g.add(box(x0 - cl, x1 + cl, -cl, -cl + lipIn, tb + pillarH, tb + pillarH + lipT));
-
-  /* detent: a stepped wedge on the ledge, clicking into the plate's bottom pocket */
-  if (notch) {
-    const steps = 4;
-    const crest = RACK.detent - 0.1;
-    for (let i = 0; i < steps; i++) {
-      const inset = crest * (1 - (i + 1) / steps);
-      const rise = crest * ((i + 1) / steps);
-      g.add(
-        box(notch.x0 + inset, notch.x1 - inset, -cl, -cl + rise, tb, tb + T, 0.02),
-      );
-    }
-  }
-
-  return g;
-}
-
-/**
- * Wedge the rack stands in. A separate part only because a stand cannot be printed as
- * part of a plate that lies flat on the bed — a foot has to reach behind the plate.
- *
- * Prints on its base: the sloping face is a 20° overhang, the slot is cut into it.
- */
-export function buildFoot(p) {
-  const d = derive(p);
-  const g = new THREE.Group();
-  g.name = 'foot';
+  g.name = 'stand';
   if (!d.hasRack) return g;
 
   const theta = d.tilt * deg;
   const tan = Math.tan(theta);
+  const cos = Math.cos(theta);
+  const sin = Math.sin(theta);
+
+  const W = d.width;
+  const H = d.height;
+  const T = d.thickness;
+
   const lip = d.lipH;
   const hb = d.hb;
   const rear = d.rearFoot;
-  const finT = 4.5;
-  const span = d.rackWidth;
 
-  // Side profile in (z, y): the front edge lies on the rack's back plane, the base
-  // lies on the bed. Every face is either vertical or a 20° overhang, which is why
-  // this shape prints standing with no supports.
+  const clSide = 0.4;
+  const clThick = 0.4;
+  const slotW = T + clThick;
+  const slotDepth = 3.5;
+  const wallThick = 3.5;
+
+  const halfInner = W / 2 + clSide;
+  const totalStandW = 2 * (halfInner + slotDepth + wallThick);
+
+  const ov = 0.05;
+  const box = (dx, dy, dz, px, py, pz, rx = 0) => {
+    const geo = new THREE.BoxGeometry(dx + ov * 2, dy + ov * 2, dz + ov * 2);
+    const m = new THREE.Mesh(geo, null);
+    m.rotation.x = rx;
+    m.position.set(px, py, pz);
+    return m;
+  };
+
+  // Outer wedge profile
   const shape = new THREE.Shape();
   shape.moveTo(-hb * tan, lip + hb);
   shape.lineTo(0, lip);
@@ -594,26 +542,62 @@ export function buildFoot(p) {
   shape.lineTo(-rear, 0);
   shape.closePath();
 
-  const geo = new THREE.ExtrudeGeometry(shape, {
-    depth: finT,
+  const finGeo = new THREE.ExtrudeGeometry(shape, {
+    depth: wallThick + ov,
     bevelEnabled: false,
     curveSegments: 2,
   });
-  geo.rotateY(-Math.PI / 2);
+  finGeo.rotateY(-Math.PI / 2);
 
+  // Both side wedges
   for (const s of [-1, 1]) {
-    const fin = new THREE.Mesh(geo, null);
-    fin.position.x = s > 0 ? span / 2 : -span / 2 + finT;
+    // Outer solid fin
+    const fin = new THREE.Mesh(finGeo, null);
+    fin.position.x = s > 0 ? halfInner + slotDepth + wallThick : -halfInner - slotDepth;
     g.add(fin);
+
+    // Channel flanges
+    const chLength = hb + 2;
+    const chX = s > 0 ? halfInner + slotDepth / 2 : -halfInner - slotDepth / 2;
+
+    // Back flange of channel (supports back of plate)
+    const backFlangeT = 2.4;
+    const localY = chLength / 2;
+    const localZ_back = -backFlangeT / 2;
+    const worldY_back = lip + localY * cos + localZ_back * sin;
+    const worldZ_back = -localY * sin + localZ_back * cos;
+    g.add(box(slotDepth, chLength, backFlangeT, chX, worldY_back, worldZ_back, -theta));
+
+    // Front lip of channel (holds front of plate)
+    const frontLipT = 1.8;
+    const localZ_front = slotW + frontLipT / 2;
+    const worldY_front = lip + localY * cos + localZ_front * sin;
+    const worldZ_front = -localY * sin + localZ_front * cos;
+    g.add(box(slotDepth, chLength, frontLipT, chX, worldY_front, worldZ_front, -theta));
   }
 
-  // tie bar so the two gussets cannot splay
-  const tie = new THREE.Mesh(new THREE.BoxGeometry(span, 5, 5), null);
-  tie.position.set(0, 2.5, -rear * 0.7);
-  g.add(tie);
+  // Front plinth (acts as bottom stop and base bridge)
+  const plinthDepth = slotW + 3;
+  g.add(box(totalStandW, lip, plinthDepth, 0, lip / 2, plinthDepth / 2 - 1.5));
+
+  // Rear tie bar connecting rear feet
+  g.add(box(totalStandW, 4, 5, 0, 2, -rear * 0.7));
 
   return g;
 }
+
+/** Legacy alias for buildStand. */
+export function buildRack(p) {
+  return buildStand(p);
+}
+
+/** Legacy stub for buildFoot (stand is now a unified single piece). */
+export function buildFoot(p) {
+  const g = new THREE.Group();
+  g.name = 'foot';
+  return g;
+}
+
 /* ------------------------------------------------------------------ preview ink */
 
 export function buildInk(p) {
@@ -666,28 +650,20 @@ export function buildCoupon(p) {
   return g;
 }
 
-/** Seat the panel in the rack for preview. */
-/** Rack frame -> world: lean it back by the rake and lift it onto its base. */
+/** Stand sits flat on table/dash at (0, 0, 0). */
 export function rackTransform(p) {
-  const d = derive(p);
-  return { rotX: -d.tilt * deg, y: d.lipH };
+  return { rotX: 0, y: 0 };
 }
 
-/** Seat the panel inside the rack for preview. */
+/** Seat the panel inside the stand's channels. */
 export function seatPanel(panelGroup, p) {
   const d = derive(p);
   if (!d.hasRack) return panelGroup;
-  const theta = d.tilt * deg;
-  const yLocal = -RACK.cl;
-  const zLocal = RACK.tb;
-  panelGroup.rotation.set(-theta, 0, 0);
-  panelGroup.position.set(
-    0,
-    d.lipH + yLocal * Math.cos(theta) + zLocal * Math.sin(theta),
-    -yLocal * Math.sin(theta) + zLocal * Math.cos(theta),
-  );
+  panelGroup.rotation.set(-d.tilt * deg, 0, 0);
+  panelGroup.position.set(0, d.lipH, 0);
   return panelGroup;
 }
+
 export function fits(p) {
   const d = derive(p);
   const w = Math.max(d.width, d.hasRack ? d.rackWidth : 0);
@@ -695,14 +671,3 @@ export function fits(p) {
   const h = d.hasRack ? d.rackHeight : d.thickness;
   return { w, dep, h, ok: w <= 176 && dep <= 176 && h <= 176 };
 }
-
-
-
-
-
-
-
-
-
-
-

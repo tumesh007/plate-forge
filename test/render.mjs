@@ -201,7 +201,7 @@ render(
   ],
   [250, 165, 300],
   [0, 20, -8],
-  'plate-forge/test/assembled.ppm',
+  'test/assembled.ppm',
 );
 
 // as printed
@@ -223,7 +223,7 @@ render(
   ],
   [110, 210, 250],
   [0, 14, 0],
-  'plate-forge/test/printed.ppm',
+  'test/printed.ppm',
 );
 
 // front on, panel only — the view that shows whether the number is legible
@@ -239,11 +239,11 @@ render(
   ],
   [-28, 44, 310],
   [0, 15, 0],
-  'plate-forge/test/front.ppm',
+  'test/front.ppm',
 );
 
 // zoom on the first three digits, with and without the pen preview
-render([{ tris: gather(solo), color: WHITE }], [-50, 16, 78], [-50, 14, 0], 'plate-forge/test/zoom-bare.ppm');
+render([{ tris: gather(solo), color: WHITE }], [-50, 16, 78], [-50, 14, 0], 'test/zoom-bare.ppm');
 render(
   [
     { tris: gather(solo), color: WHITE },
@@ -251,7 +251,7 @@ render(
   ],
   [-50, 16, 78],
   [-50, 14, 0],
-  'plate-forge/test/zoom-ink.ppm',
+  'test/zoom-ink.ppm',
 );
 
 
