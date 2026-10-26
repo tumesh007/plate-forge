@@ -325,7 +325,8 @@ p(
     "error message."
 )
 
-picture("easel.png", 14.2, "The easel as printed: two side fins, a plinth that doubles as the front lip, and a rear tie.")
+picture("easel.png", 14.2, "The monolithic stand as printed: 100% bed-grounded uprights with grooved channels, dual side key locks, and rear tie.")
+picture("lock-detail.png", 13.5, "Close-up of the grooved channel and 0.5 mm snug-fit side key lock engaging the panel notch.")
 
 # ---- 8 ------------------------------------------------------------------
 doc.add_heading("8. Files", level=1)
