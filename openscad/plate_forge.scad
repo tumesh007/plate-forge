@@ -259,7 +259,7 @@ module panel(str = number, h = -1, thick = panel_thickness, rad = corner_radius)
 function lip_height() = min(easel_lip, max(5, panel_height(fitted_height()) * 0.22));
 
 /**
- * Single-piece grooved wedge stand with dual side keying and zero floating parts.
+ * Single-piece grooved wedge stand with monolithic grounded channels and dual side keying.
  */
 module stand() {
     hh = fitted_height();
@@ -271,68 +271,86 @@ module stand() {
     clSide = 0.4;
     clThick = 0.4;
     slotW = th + clThick;
+    frontLipT = 2.0;
+    v_front = slotW + frontLipT;
+    backFlangeT = 2.5;
     slotDepth = 4.0;
     wallThick = 4.0;
-    wedgeThick = slotDepth + wallThick;
 
-    halfInner = pw / 2 + clSide;
-    totalW = 2 * (halfInner + wedgeThick);
+    x_slot_outer = pw / 2 + clSide;
+    x_slot_inner = x_slot_outer - slotDepth;
+    x_stand_outer = x_slot_outer + wallThick;
 
-    tanr = tan(rake_deg);
     cosr = cos(rake_deg);
     sinr = sin(rake_deg);
     hb = max(8, ph * 0.86);
     rear = max(18, min(46, ph * 0.62));
+    chLen = hb + 2.0;
 
-    // Outer fins
-    A = [-hb * tanr, base + hb];
-    B = [0, base];
-    C = [0, 0];
-    D = [-rear, 0];
+    function Y(u, v) = base + u * cosr + v * sinr;
+    function Z(u, v) = -u * sinr + v * cosr;
+
+    u_toe = -(base + v_front * sinr) / cosr;
+    Z_toe = Z(u_toe, v_front);
+
+    // 8-point 2D channel profile in [Z, Y]
+    chPoints = [
+        [-rear, 0],
+        [Z_toe, 0],
+        [Z(chLen, v_front), Y(chLen, v_front)],
+        [Z(chLen, slotW), Y(chLen, slotW)],
+        [Z(0, slotW), Y(0, slotW)],
+        [Z(0, 0), Y(0, 0)],
+        [Z(chLen, 0), Y(chLen, 0)],
+        [Z(chLen, -backFlangeT), Y(chLen, -backFlangeT)]
+    ];
+
+    // 4-point 2D outer wall profile in [Z, Y]
+    outPoints = [
+        [-rear, 0],
+        [Z_toe, 0],
+        [Z(chLen, v_front), Y(chLen, v_front)],
+        [Z(chLen, -backFlangeT), Y(chLen, -backFlangeT)]
+    ];
+
+    // Left and right side uprights
     for (sgn = [-1, 1]) {
-        xl = sgn > 0 ? halfInner + slotDepth : -halfInner - slotDepth - wallThick;
-        translate([xl, 0, 0])
+        // Channel solid with slot recessed from top
+        chX = sgn > 0 ? x_slot_outer + 0.05 : -x_slot_inner + 0.05;
+        translate([chX, 0, 0])
             rotate([0, -90, 0])
-                linear_extrude(height = wallThick)
-                    polygon(points = [A, B, C, D]);
+                linear_extrude(height = slotDepth + 0.05)
+                    polygon(points = chPoints);
 
-        // Channel flanges along the rake slope
-        chX = sgn > 0 ? halfInner : -halfInner - slotDepth;
-        chLen = hb + 2;
+        // Outer wall solid covering channel from the outside
+        outX = sgn > 0 ? x_stand_outer + 0.05 : -x_slot_outer + 0.05;
+        translate([outX, 0, 0])
+            rotate([0, -90, 0])
+                linear_extrude(height = wallThick + 0.05)
+                    polygon(points = outPoints);
 
-        // Back flange
-        translate([chX, base, 0])
-            rotate([-rake_deg, 0, 0])
-                translate([0, 0, -2.4])
-                    cube([slotDepth, chLen, 2.4]);
-
-        // Front lip
-        translate([chX, base, 0])
-            rotate([-rake_deg, 0, 0])
-                translate([0, 0, slotW])
-                    cube([slotDepth, chLen, 1.8]);
-
-        // Grounding block directly under channel down to bed y=0
-        translate([chX, 0, -2.4])
-            cube([slotDepth, base, slotW + 4.2]);
-
-        // Dual side key bumps inside the channel (0.5 mm snug fit)
-        keyLocalY = 8.5;
-        keyWorldY = base + keyLocalY * cosr + (slotW / 2) * sinr;
-        keyWorldZ = -keyLocalY * sinr + (slotW / 2) * cosr;
-        keyX = sgn > 0 ? halfInner + slotDepth - 0.7 : -halfInner - slotDepth;
+        // Dual side key bump inside the channel (0.5 mm snug fit into panel notch)
+        keyU = 8.5;
+        keyV = slotW / 2;
+        keyWorldY = Y(keyU, keyV);
+        keyWorldZ = Z(keyU, keyV);
+        keyH = 0.8;
+        keyX = sgn > 0 ? x_slot_outer - keyH / 2 : -x_slot_outer + keyH / 2;
         translate([keyX, keyWorldY, keyWorldZ])
             rotate([-rake_deg, 0, 0])
-                cube([0.7, 5, slotW * 0.8]);
+                translate([-keyH / 2, -2.5, -slotW * 0.4])
+                    cube([keyH + 0.05, 5.0, slotW * 0.8]);
     }
 
-    // Front plinth (bottom ledge stop + front bridge)
-    plinthD = slotW + 3;
-    translate([-totalW / 2, 0, -1.5])
-        cube([totalW, base, plinthD + 1.5]);
+    // Front plinth bridge (monolithic base sitting flat on bed connecting left & right uprights)
+    bridgeW = 2 * (x_slot_inner + 0.05);
+    bridgeD = Z_toe - (-4.0);
+    translate([-bridgeW / 2, 0, -4.0])
+        cube([bridgeW, base + 0.05, bridgeD]);
 
-    // Rear tie bar
-    translate([-totalW / 2, 0, -rear * 0.7])
+    // Rear tie bar connecting rear feet on the bed
+    totalW = 2 * (x_stand_outer + 0.05);
+    translate([-totalW / 2, 0, -rear * 0.7 - 2.75])
         cube([totalW, 4.5, 5.5]);
 }
 

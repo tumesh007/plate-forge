@@ -489,7 +489,7 @@ export function derive(p) {
   const rearFoot = Math.max(18, Math.min(46, height * 0.62));
   const hb = Math.max(8, height * 0.86);
 
-  const wedgeThick = 8.0;
+  const wedgeThick = 4.4;
   const clSide = 0.4;
   const rackWidth = width + 2 * (clSide + wedgeThick);
   const rackDepth = rearFoot + thickness + 9;
@@ -551,88 +551,105 @@ export function buildStand(p) {
   const lip = d.lipH;
   const hb = d.hb;
   const rear = d.rearFoot;
+  const chLength = hb + 2.0;
 
   const clSide = 0.4;
   const clThick = 0.4;
   const slotW = T + clThick;
+  const frontLipT = 2.0;
+  const v_front = slotW + frontLipT;
+  const backFlangeT = 2.5;
   const slotDepth = 4.0;
   const wallThick = 4.0;
 
-  const halfInner = W / 2 + clSide;
-  const totalStandW = 2 * (halfInner + slotDepth + wallThick);
+  const x_slot_outer = W / 2 + clSide;
+  const x_slot_inner = x_slot_outer - slotDepth;
+  const x_stand_outer = x_slot_outer + wallThick;
 
+  const Y = (u, v) => lip + u * cos + v * sin;
+  const Z = (u, v) => -u * sin + v * cos;
+
+  const u_toe = -(lip + v_front * sin) / cos;
+  const Z_toe = Z(u_toe, v_front);
   const ov = 0.05;
-  const box = (dx, dy, dz, px, py, pz, rx = 0) => {
-    const geo = new THREE.BoxGeometry(dx + ov * 2, dy + ov * 2, dz + ov * 2);
-    const m = new THREE.Mesh(geo, null);
-    m.rotation.x = rx;
-    m.position.set(px, py, pz);
-    return m;
-  };
 
-  // Outer solid trapezium wedge profile
-  const shape = new THREE.Shape();
-  shape.moveTo(-hb * tan, lip + hb);
-  shape.lineTo(0, lip);
-  shape.lineTo(0, 0);
-  shape.lineTo(-rear, 0);
-  shape.closePath();
+  // 8-point monolithic grooved channel profile in (Z, Y), CCW winding order
+  const chShape = new THREE.Shape();
+  chShape.moveTo(-rear, 0); // heel
+  chShape.lineTo(Z_toe, 0); // toe
+  chShape.lineTo(Z(chLength, v_front), Y(chLength, v_front)); // top front lip
+  chShape.lineTo(Z(chLength, slotW), Y(chLength, slotW)); // top slot front
+  chShape.lineTo(Z(0, slotW), Y(0, slotW)); // slot floor front
+  chShape.lineTo(Z(0, 0), Y(0, 0)); // slot floor back
+  chShape.lineTo(Z(chLength, 0), Y(chLength, 0)); // top slot back
+  chShape.lineTo(Z(chLength, -backFlangeT), Y(chLength, -backFlangeT)); // top back flange
+  chShape.closePath();
 
-  const finGeo = new THREE.ExtrudeGeometry(shape, {
-    depth: wallThick + ov,
-    bevelEnabled: false,
-    curveSegments: 2,
-  });
-  finGeo.rotateY(-Math.PI / 2);
+  // 4-point monolithic outer wall profile in (Z, Y), CCW winding order
+  const outShape = new THREE.Shape();
+  outShape.moveTo(-rear, 0);
+  outShape.lineTo(Z_toe, 0);
+  outShape.lineTo(Z(chLength, v_front), Y(chLength, v_front));
+  outShape.lineTo(Z(chLength, -backFlangeT), Y(chLength, -backFlangeT));
+  outShape.closePath();
 
-  // Both side wedges
-  for (const s of [-1, 1]) {
-    // Outer solid fin (covers the channel from the outside, grounded on bed y=0)
-    const fin = new THREE.Mesh(finGeo, null);
-    fin.position.x = s > 0 ? halfInner + slotDepth + wallThick : -halfInner - slotDepth;
-    g.add(fin);
+  const chGeo = new THREE.ExtrudeGeometry(chShape, { depth: slotDepth + ov, bevelEnabled: false });
+  chGeo.rotateY(-Math.PI / 2);
 
-    // Channel flanges along the rake slope
-    const chLength = hb + 2;
-    const chX = s > 0 ? halfInner + slotDepth / 2 : -halfInner - slotDepth / 2;
+  const outGeo = new THREE.ExtrudeGeometry(outShape, { depth: wallThick + ov, bevelEnabled: false });
+  outGeo.rotateY(-Math.PI / 2);
 
-    // Back support flange of channel (solid down to base)
-    const backFlangeT = 2.4;
-    const localY = chLength / 2;
-    const localZ_back = -backFlangeT / 2;
-    const worldY_back = lip + localY * cos + localZ_back * sin;
-    const worldZ_back = -localY * sin + localZ_back * cos;
-    g.add(box(slotDepth, chLength, backFlangeT, chX, worldY_back, worldZ_back, -theta));
+  // Right side upright
+  const rightCh = new THREE.Mesh(chGeo, null);
+  rightCh.position.x = x_slot_outer + ov;
+  g.add(rightCh);
 
-    // Front retaining lip of channel
-    const frontLipT = 1.8;
-    const localZ_front = slotW + frontLipT / 2;
-    const worldY_front = lip + localY * cos + localZ_front * sin;
-    const worldZ_front = -localY * sin + localZ_front * cos;
-    g.add(box(slotDepth, chLength, frontLipT, chX, worldY_front, worldZ_front, -theta));
+  const rightOut = new THREE.Mesh(outGeo, null);
+  rightOut.position.x = x_stand_outer + ov;
+  g.add(rightOut);
 
-    // Under-channel bed grounding: solid block directly under the channel down to bed y=0
-    const bedGroundDepth = slotW + frontLipT + backFlangeT;
-    const groundZ = (localZ_front + localZ_back) / 2;
-    g.add(box(slotDepth, lip, bedGroundDepth, chX, lip / 2, groundZ));
+  // Left side upright
+  const leftCh = new THREE.Mesh(chGeo, null);
+  leftCh.position.x = -x_slot_inner + ov;
+  g.add(leftCh);
 
-    // Dual side key lock (snug fit into panel's side notch)
-    // Positioned along the channel at notch center (y = 8.5 mm from lip)
-    const keyLocalY = 8.5;
-    const keyLocalZ = slotW / 2;
-    const keyWorldY = lip + keyLocalY * cos + keyLocalZ * sin;
-    const keyWorldZ = -keyLocalY * sin + keyLocalZ * cos;
-    const keyHeight = 0.7; // 0.7mm bump vs 0.9mm notch + 0.4mm clearance = 0.5mm snug fit
-    const keyX = s > 0 ? halfInner + slotDepth - keyHeight / 2 : -halfInner - slotDepth + keyHeight / 2;
-    g.add(box(keyHeight, 5.0, slotW * 0.8, keyX, keyWorldY, keyWorldZ, -theta));
-  }
+  const leftOut = new THREE.Mesh(outGeo, null);
+  leftOut.position.x = -x_slot_outer + ov;
+  g.add(leftOut);
 
-  // Front plinth (acts as bottom ledge stop + front base bridge, sitting flat on bed)
-  const plinthDepth = slotW + 3;
-  g.add(box(totalStandW, lip, plinthDepth, 0, lip / 2, plinthDepth / 2 - 1.5));
+  // Dual side keys: 0.8 mm bump with 45° chamfers for 0.5 mm snug click fit
+  const keyU = 8.5;
+  const keyV = slotW / 2;
+  const keyWorldY = Y(keyU, keyV);
+  const keyWorldZ = Z(keyU, keyV);
+  const keyH = 0.8;
+  const keyGeo = new THREE.BoxGeometry(keyH + ov * 2, 5.0, slotW * 0.8);
+
+  const rightKey = new THREE.Mesh(keyGeo, null);
+  rightKey.rotation.x = -theta;
+  rightKey.position.set(x_slot_outer - keyH / 2, keyWorldY, keyWorldZ);
+  g.add(rightKey);
+
+  const leftKey = new THREE.Mesh(keyGeo, null);
+  leftKey.rotation.x = -theta;
+  leftKey.position.set(-x_slot_outer + keyH / 2, keyWorldY, keyWorldZ);
+  g.add(leftKey);
+
+  // Front plinth bridge: monolithic base sitting flat on bed connecting left & right uprights
+  const bridgeW = 2 * (x_slot_inner + ov);
+  const bridgeD = Z_toe - (-4.0);
+  const bridgeZ = (Z_toe + (-4.0)) / 2;
+  const bridgeGeo = new THREE.BoxGeometry(bridgeW, lip + ov, bridgeD);
+  const bridge = new THREE.Mesh(bridgeGeo, null);
+  bridge.position.set(0, (lip + ov) / 2, bridgeZ);
+  g.add(bridge);
 
   // Rear tie bar connecting rear feet on the bed
-  g.add(box(totalStandW, 4.5, 5.5, 0, 2.25, -rear * 0.7));
+  const totalW = 2 * (x_stand_outer + ov);
+  const tieGeo = new THREE.BoxGeometry(totalW, 4.5, 5.5);
+  const tie = new THREE.Mesh(tieGeo, null);
+  tie.position.set(0, 2.25, -rear * 0.7);
+  g.add(tie);
 
   return g;
 }
