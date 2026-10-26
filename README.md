@@ -1,11 +1,14 @@
 # Plate Forge
 
 A parametric generator for a single-colour, single-sided car parking number plate: a flat engraved
-panel that drops into a reusable 30° easel. Sized for a **Bambu Lab A1 mini**.
+panel that drops into a reusable 30° stand with dual side snap-locks. Sized for a **Bambu Lab A1 mini**.
+
+[![MakerWorld](https://img.shields.io/badge/MakerWorld-Model%203496653-blue?style=flat&logo=bambulab)](https://makerworld.com/en/models/3496653-parametric-car-parking-number-plate#profileId-3993980)
+[![GitHub Pages](https://img.shields.io/badge/Web_App-Live_Generator-brightgreen)](https://tumesh007.github.io/plate-forge/)
 
 ![Assembled](docs/assembled.png)
 
-Three ways in: a **browser generator** that exports STLs, an **OpenSCAD file** ready for MakerWorld's
+Three ways in: a **[browser generator](https://tumesh007.github.io/plate-forge/)** that exports STLs, an **[OpenSCAD file on MakerWorld](https://makerworld.com/en/models/3496653-parametric-car-parking-number-plate#profileId-3993980)** ready for MakerWorld's
 Parametric Model Maker, and this repo's geometry tests.
 
 ## Why this shape

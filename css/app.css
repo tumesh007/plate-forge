@@ -509,10 +509,14 @@ select {
   margin-right: 4px;
 }
 
-.exportbar button {
+.exportbar button,
+.exportbar a.btn {
   appearance: none;
   font: inherit;
   font-size: 13px;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
   border-radius: 8px;
   padding: 9px 15px;
   cursor: pointer;
@@ -522,11 +526,14 @@ select {
   transition: border-color 0.15s, background 0.15s, transform 0.06s;
 }
 
-.exportbar button:hover {
-  border-color: var(--dim-2);
+.exportbar button:hover,
+.exportbar a.btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
-.exportbar button:active {
+.exportbar button:active,
+.exportbar a.btn:active {
   transform: translateY(1px);
 }
 
