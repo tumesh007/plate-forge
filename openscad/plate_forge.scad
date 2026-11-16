@@ -234,9 +234,9 @@ module panel(str = number, h = -1, thick = panel_thickness, rad = corner_radius)
             // Dual side keying notches for snap fit with stand keys
             if (with_rack) {
                 translate([-1, 5.5, -1])
-                    cube([0.9 + 1, 6, thick + 2]);
-                translate([w - 0.9, 5.5, -1])
-                    cube([0.9 + 1, 6, thick + 2]);
+                    cube([0.55 + 1, 6, thick + 2]);
+                translate([w - 0.55, 5.5, -1])
+                    cube([0.55 + 1, 6, thick + 2]);
             }
 
             if (lettering == "engraved")
@@ -268,8 +268,8 @@ module stand() {
     th = panel_thickness;
     base = lip_height();
 
-    clSide = 0.4;
-    clThick = 0.4;
+    clSide = 0.15;
+    clThick = 0.15;
     slotW = th + clThick;
     frontLipT = 2.0;
     v_front = slotW + frontLipT;
@@ -329,17 +329,19 @@ module stand() {
                 linear_extrude(height = wallThick + 0.05)
                     polygon(points = outPoints);
 
-        // Dual side key bump inside the channel (0.5 mm snug fit into panel notch)
-        keyU = 8.5;
-        keyV = slotW / 2;
-        keyWorldY = Y(keyU, keyV);
-        keyWorldZ = Z(keyU, keyV);
-        keyH = 0.8;
-        keyX = sgn > 0 ? x_slot_outer - keyH / 2 : -x_slot_outer + keyH / 2;
-        translate([keyX, keyWorldY, keyWorldZ])
+        // Dual side key bumps inside the channel (ramped detents with 0.10 mm snug clearance)
+        keyH = 0.60;
+        keyDepth = slotW - 0.70;
+        translate([sgn * x_slot_outer, base, 0])
             rotate([-rake_deg, 0, 0])
-                translate([-keyH / 2, -2.5, -slotW * 0.4])
-                    cube([keyH + 0.05, 5.0, slotW * 0.8]);
+                translate([0, 0, 0.35])
+                    linear_extrude(height = keyDepth)
+                        polygon(points = [
+                            [0, 6.0],
+                            [-sgn * keyH, 7.5],
+                            [-sgn * keyH, 9.5],
+                            [0, 11.5]
+                        ]);
     }
 
     // Front plinth bridge (monolithic base sitting flat on bed connecting left & right uprights)

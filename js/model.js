@@ -471,7 +471,7 @@ export function derive(p) {
 
   // Dual side keying notches
   const sideNotch = hasRack
-    ? { y0: 5.5, y1: 11.5, depth: 0.9 }
+    ? { y0: 5.5, y1: 11.5, depth: 0.55 }
     : null;
 
   const radiusSafe = Math.max(
@@ -490,7 +490,7 @@ export function derive(p) {
   const hb = Math.max(8, height * 0.86);
 
   const wedgeThick = 4.4;
-  const clSide = 0.4;
+  const clSide = 0.15;
   const rackWidth = width + 2 * (clSide + wedgeThick);
   const rackDepth = rearFoot + thickness + 9;
   const rackHeight = lipH + (height + 2) * Math.cos(tilt * deg);
@@ -553,8 +553,8 @@ export function buildStand(p) {
   const rear = d.rearFoot;
   const chLength = hb + 2.0;
 
-  const clSide = 0.4;
-  const clThick = 0.4;
+  const clSide = 0.15;
+  const clThick = 0.15;
   const slotW = T + clThick;
   const frontLipT = 2.0;
   const v_front = slotW + frontLipT;
@@ -617,22 +617,38 @@ export function buildStand(p) {
   leftOut.position.x = -x_slot_outer + ov;
   g.add(leftOut);
 
-  // Dual side keys: 0.8 mm bump with 45° chamfers for 0.5 mm snug click fit
-  const keyU = 8.5;
-  const keyV = slotW / 2;
-  const keyWorldY = Y(keyU, keyV);
-  const keyWorldZ = Z(keyU, keyV);
-  const keyH = 0.8;
-  const keyGeo = new THREE.BoxGeometry(keyH + ov * 2, 5.0, slotW * 0.8);
+  // Dual side keys: ramped detents with 0.10 mm seated clearance and 0.45 mm positive lock engagement
+  const keyU0 = 6.0, keyU1 = 7.5, keyU2 = 9.5, keyU3 = 11.5;
+  const keyH = 0.60;
+  const keyV0 = 0.35;
+  const keyVDepth = slotW - 0.70;
 
-  const rightKey = new THREE.Mesh(keyGeo, null);
+  // Right key: protrudes in -X direction
+  const rightKeyShape = new THREE.Shape();
+  rightKeyShape.moveTo(0, keyU0);
+  rightKeyShape.lineTo(-keyH, keyU1);
+  rightKeyShape.lineTo(-keyH, keyU2);
+  rightKeyShape.lineTo(0, keyU3);
+  rightKeyShape.closePath();
+
+  const rightKeyGeo = new THREE.ExtrudeGeometry(rightKeyShape, { depth: keyVDepth, bevelEnabled: false });
+  const rightKey = new THREE.Mesh(rightKeyGeo, null);
   rightKey.rotation.x = -theta;
-  rightKey.position.set(x_slot_outer - keyH / 2, keyWorldY, keyWorldZ);
+  rightKey.position.set(x_slot_outer, lip + keyV0 * sin, keyV0 * cos);
   g.add(rightKey);
 
-  const leftKey = new THREE.Mesh(keyGeo, null);
+  // Left key: protrudes in +X direction
+  const leftKeyShape = new THREE.Shape();
+  leftKeyShape.moveTo(0, keyU0);
+  leftKeyShape.lineTo(keyH, keyU1);
+  leftKeyShape.lineTo(keyH, keyU2);
+  leftKeyShape.lineTo(0, keyU3);
+  leftKeyShape.closePath();
+
+  const leftKeyGeo = new THREE.ExtrudeGeometry(leftKeyShape, { depth: keyVDepth, bevelEnabled: false });
+  const leftKey = new THREE.Mesh(leftKeyGeo, null);
   leftKey.rotation.x = -theta;
-  leftKey.position.set(-x_slot_outer + keyH / 2, keyWorldY, keyWorldZ);
+  leftKey.position.set(-x_slot_outer, lip + keyV0 * sin, keyV0 * cos);
   g.add(leftKey);
 
   // Front plinth bridge: monolithic base sitting flat on bed connecting left & right uprights
